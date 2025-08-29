@@ -1,0 +1,14 @@
+flask
+flask-cors
+flask-sqlalchemy
+flask-migrate
+flask-mail
+mysql-connector-python
+python-dotenv
+werkzeug
+alembic
+cryptography
+bcrypt==4.0.1
+PyJWT
+passlib[bcrypt]==1.7.4
+razorpay
