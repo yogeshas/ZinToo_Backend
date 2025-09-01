@@ -38,10 +38,16 @@ class Order(db.Model):
     delivery_guy_id = db.Column(db.Integer, db.ForeignKey("delivery_onboarding.id"), nullable=True)
     assigned_at = db.Column(db.DateTime, nullable=True)
     delivery_notes = db.Column(db.Text, nullable=True)
+    
+    # Simple delivery type tracking (optional for now)
+    is_exchange_delivery = db.Column(db.Boolean, default=False, nullable=True)
+    
+
 
     # Relationships
     customer = db.relationship("Customer", backref="orders")
     order_items = db.relationship("OrderItem", backref="order", lazy="dynamic", cascade="all, delete-orphan")
+
 
     def __repr__(self):
         return f"<Order {self.order_number} - Customer: {self.customer_id}, Status: {self.status}>"
@@ -69,7 +75,8 @@ class Order(db.Model):
             "estimated_delivery": self.estimated_delivery.isoformat() if self.estimated_delivery else None,
             "delivery_guy_id": self.delivery_guy_id,
             "assigned_at": self.assigned_at.isoformat() if self.assigned_at else None,
-            "delivery_notes": self.delivery_notes
+            "delivery_notes": self.delivery_notes,
+            "is_exchange_delivery": self.is_exchange_delivery
         }
 
     def generate_order_number(self):
@@ -89,14 +96,35 @@ class OrderItem(db.Model):
     # Product snapshot (in case product details change)
     product_name = db.Column(db.String(200), nullable=False)
     product_image = db.Column(db.String(500), nullable=True)
+    selected_size = db.Column(db.String(20), nullable=True)  # Store the selected size
+    
+    # Individual product status tracking
+    status = db.Column(db.String(20), default="pending", nullable=False)  # pending, confirmed, processing, shipped, delivered, cancelled, returned, refunded
+    cancel_reason = db.Column(db.String(500), nullable=True)
+    cancel_requested_at = db.Column(db.DateTime, nullable=True)
+    cancelled_at = db.Column(db.DateTime, nullable=True)
+    cancelled_by = db.Column(db.String(20), nullable=True)  # customer, admin, system
+    
+    # Refund tracking
+    refund_status = db.Column(db.String(20), default="not_applicable", nullable=False)  # not_applicable, requested, initiated, completed, failed
+    refund_amount = db.Column(db.Float, default=0.0, nullable=False)
+    refund_reason = db.Column(db.String(500), nullable=True)
+    refund_requested_at = db.Column(db.DateTime, nullable=True)
+    refunded_at = db.Column(db.DateTime, nullable=True)
+    
+    # Exchange tracking
+    exchange_status = db.Column(db.String(20), default="not_applicable", nullable=False)  # not_applicable, requested, approved, out_for_delivery, delivered, rejected
+    exchange_id = db.Column(db.Integer, db.ForeignKey("exchange.id"), nullable=True)
     
     created_at = db.Column(db.DateTime, default=get_current_time)
+    updated_at = db.Column(db.DateTime, default=get_current_time, onupdate=get_current_time)
 
     # Relationships
     product = db.relationship("Product", backref="order_items")
+    # Note: Exchange relationship is handled by Exchange model's backref to "exchanges"
 
     def __repr__(self):
-        return f"<OrderItem {self.id} - Order: {self.order_id}, Product: {self.product_id}, Qty: {self.quantity}>"
+        return f"<OrderItem {self.id} - Order: {self.order_id}, Product: {self.product_id}, Size: {self.selected_size}, Qty: {self.quantity}>"
 
     def as_dict(self):
         return {
@@ -108,5 +136,19 @@ class OrderItem(db.Model):
             "total_price": self.total_price,
             "product_name": self.product_name,
             "product_image": self.product_image,
-            "created_at": self.created_at.isoformat() if self.created_at else None
+            "selected_size": self.selected_size,
+            "status": self.status,
+            "cancel_reason": self.cancel_reason,
+            "cancel_requested_at": self.cancel_requested_at.isoformat() if self.cancel_requested_at else None,
+            "cancelled_at": self.cancelled_at.isoformat() if self.cancelled_at else None,
+            "cancelled_by": self.cancelled_by,
+            "refund_status": self.refund_status,
+            "refund_amount": self.refund_amount,
+            "refund_reason": self.refund_reason,
+            "refund_requested_at": self.refund_requested_at.isoformat() if self.refund_requested_at else None,
+            "refunded_at": self.refunded_at.isoformat() if self.refunded_at else None,
+            "exchange_status": self.exchange_status,
+            "exchange_id": self.exchange_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None
         }

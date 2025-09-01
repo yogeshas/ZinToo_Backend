@@ -10,7 +10,8 @@ from services.delivery_order_service import (
     serialize_orders_with_customer,
     out_for_delivery_order_by_delivery_guy,
     reject_order_by_delivery_guy,
-    delivered_order_by_delivery_guy
+    delivered_order_by_delivery_guy,
+    get_order_delivery_purpose
 )
 from utils.crypto import encrypt_payload
 from models.delivery_onboarding import DeliveryOnboarding
@@ -51,6 +52,7 @@ def require_delivery_auth(f):
 def list_orders():
     delivery_guy_id = request.delivery_guy_id
     status = request.args.get("status")  # approved|assigned|cancelled|delivered
+    print(f"Statusssssss: {status}")
     orders = get_orders_for_delivery_guy(delivery_guy_id, status)
     serialized = serialize_orders_with_customer(orders)
     # Return normal JSON instead of encrypted data
@@ -157,15 +159,20 @@ def out_for_delivery(order_id: int):
     try:
         delivery_guy_id = request.delivery_guy_id
         
-        # Get out for delivery reason from request
-        data = request.get_json()
-        out_for_delivery_reason = data.get("out_for_delivery_reason", "Order out for delivery by delivery personnel") if data else "Order out for delivery by delivery personnel"
+        # Get out for delivery reason and exchange flag from request
+        data = request.get_json() or {}
+        out_for_delivery_reason = data.get("out_for_delivery_reason", "Order out for delivery by delivery personnel")
+        is_exchange = data.get("is_exchange", False)  # Simple boolean flag
         
-        result = out_for_delivery_order_by_delivery_guy(delivery_guy_id, order_id, out_for_delivery_reason)
+        result = out_for_delivery_order_by_delivery_guy(delivery_guy_id, order_id, out_for_delivery_reason, is_exchange)
         
         if result["success"]:
-            # Return normal JSON instead of encrypted data
-            return jsonify({"success": True, "message": result["message"], "order": result["order"]}), 200
+            return jsonify({
+                "success": True, 
+                "message": result["message"], 
+                "order": result["order"],
+                "is_exchange": is_exchange
+            }), 200
         else:
             return jsonify({"error": result["message"]}), 400
             
@@ -192,6 +199,31 @@ def delivered(order_id: int):
             
     except Exception as e:
         print(f"Delivered order error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@delivery_order_bp.route("/orders/<int:order_id>/delivery-purpose", methods=["GET"])
+@require_delivery_auth
+def get_delivery_purpose(order_id: int):
+    """Get delivery purpose information for an order"""
+    try:
+        delivery_guy_id = request.delivery_guy_id
+        
+        # Verify order is assigned to this delivery guy
+        from models.order import Order
+        order = Order.query.filter_by(id=order_id, delivery_guy_id=delivery_guy_id).first()
+        if not order:
+            return jsonify({"error": "Order not found or not assigned to you"}), 404
+        
+        purpose_info = get_order_delivery_purpose(order_id)
+        
+        return jsonify({
+            "success": True,
+            "delivery_purpose": purpose_info
+        }), 200
+        
+    except Exception as e:
+        print(f"Get delivery purpose error: {str(e)}")
         return jsonify({"error": "Internal server error"}), 500
 
 

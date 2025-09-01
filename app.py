@@ -117,6 +117,7 @@ try:
     from routes.delivery_onboarding import delivery_onboarding_bp
     from routes.delivery_order import delivery_order_bp
     from routes.exchange import exchange_bp
+    from routes.order_items import order_items_bp
     
     # Register new blueprints
     app.register_blueprint(wallet_bp, url_prefix='/api/wallet')
@@ -130,6 +131,7 @@ try:
     app.register_blueprint(delivery_onboarding_bp, url_prefix='/api/delivery')
     app.register_blueprint(delivery_order_bp, url_prefix='/api/delivery')
     app.register_blueprint(exchange_bp, url_prefix='/api/exchanges')
+    app.register_blueprint(order_items_bp, url_prefix='/api/order-items')
     print("✅ New blueprints registered successfully")
 except Exception as e:
     print(f"⚠️ Warning: Could not register new blueprints: {str(e)}")

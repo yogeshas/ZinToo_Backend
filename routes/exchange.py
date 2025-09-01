@@ -8,6 +8,7 @@ from services.exchange_service import (
     approve_exchange,
     reject_exchange,
     assign_delivery,
+    start_delivery,
     mark_exchange_delivered,
     get_exchanges_by_status
 )
@@ -201,6 +202,19 @@ def mark_delivered_admin(current_admin, exchange_id):
         return jsonify({"error": "Internal server error"}), 500
 
 # Delivery guy routes (for mobile app)
+@exchange_bp.route("/delivery/<int:exchange_id>/start-delivery", methods=["POST"])
+def start_delivery_delivery(exchange_id):
+    """Start delivery by delivery guy"""
+    try:
+        # This would typically require delivery guy authentication
+        # For now, we'll allow it without auth for testing
+        res, status = start_delivery(exchange_id)
+        return jsonify(res), status
+        
+    except Exception as e:
+        print(f"Start delivery delivery route error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
 @exchange_bp.route("/delivery/<int:exchange_id>/mark-delivered", methods=["POST"])
 def mark_delivered_delivery(exchange_id):
     """Mark exchange as delivered by delivery guy"""

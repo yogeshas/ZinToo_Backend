@@ -427,6 +427,252 @@ def create_onboarding_mobile(data, email):
         return {"success": False, "message": "Failed to create/update onboarding"}
 
 # ============================================================================
+# DELIVERY ORDERS MANAGEMENT (ADMIN)
+# ============================================================================
+
+@delivery_bp.route("/admin/orders", methods=["GET"])
+@require_admin_auth
+def get_all_delivery_orders_admin(current_admin):
+    """Get all delivery orders for admin panel"""
+    try:
+        status = request.args.get('status')  # approved, assigned, cancelled, delivered, rejected
+        
+        # Get all orders with delivery assignment
+        query = Order.query
+        
+        if status and status != 'all':
+            query = query.filter(Order.status == status)
+        
+        orders = query.order_by(Order.created_at.desc()).all()
+        
+        orders_data = []
+        for order in orders:
+            # Get delivery guy info
+            delivery_guy = None
+            if order.delivery_guy_id:
+                onboarding = DeliveryOnboarding.query.get(order.delivery_guy_id)
+                if onboarding:
+                    delivery_guy = {
+                        "id": onboarding.id,
+                        "name": f"{onboarding.first_name} {onboarding.last_name}".strip(),
+                        "phone": onboarding.primary_number,
+                        "email": onboarding.email,
+                        "vehicle_number": onboarding.vehicle_number
+                    }
+            
+            # Get customer info
+            customer = None
+            if order.customer:
+                customer = {
+                    "id": order.customer.id,
+                    "name": order.customer.username,
+                    "email": order.customer.email,
+                    "phone": order.customer.get_phone_number()
+                }
+            
+            order_data = {
+                "id": order.id,
+                "order_number": order.order_number,
+                "status": order.status,
+                "total_amount": order.total_amount,
+                "delivery_address": order.delivery_address,
+                "delivery_type": order.delivery_type,
+                "created_at": order.created_at.isoformat() if order.created_at else None,
+                "assigned_at": order.assigned_at.isoformat() if order.assigned_at else None,
+                "delivery_guy": delivery_guy,
+                "customer": customer
+            }
+            orders_data.append(order_data)
+        
+        data = {"orders": orders_data}
+        enc = encrypt_payload(data)
+        return jsonify({"success": True, "encrypted_data": enc}), 200
+        
+    except Exception as e:
+        print(f"Get delivery orders admin error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+@delivery_bp.route("/admin/orders/<int:order_id>", methods=["GET"])
+@require_admin_auth
+def get_delivery_order_detail_admin(current_admin, order_id):
+    """Get delivery order detail for admin panel"""
+    try:
+        order = Order.query.get(order_id)
+        if not order:
+            return jsonify({"error": "Order not found"}), 404
+        
+        if not order.delivery_guy_id:
+            return jsonify({"error": "Order not assigned to delivery"}), 400
+        
+        # Get delivery guy info
+        delivery_guy = None
+        if order.delivery_guy_id:
+            onboarding = DeliveryOnboarding.query.get(order.delivery_guy_id)
+            if onboarding:
+                delivery_guy = {
+                    "id": onboarding.id,
+                    "name": f"{onboarding.first_name} {onboarding.last_name}".strip(),
+                    "phone": onboarding.primary_number,
+                    "email": onboarding.email,
+                    "vehicle_number": onboarding.vehicle_number,
+                    "status": onboarding.status
+                }
+        
+        # Get customer info
+        customer = None
+        if order.customer:
+            customer = {
+                "id": order.customer.id,
+                "name": order.customer.username,
+                "email": order.customer.email,
+                "phone": order.customer.get_phone_number()
+            }
+        
+        # Get order items
+        order_items = []
+        if order.order_items:
+            for item in order.order_items:
+                order_items.append({
+                    "id": item.id,
+                    "product_name": item.product_name,
+                    "quantity": item.quantity,
+                    "unit_price": item.unit_price,
+                    "total_price": item.total_price,
+                    "selected_size": item.selected_size
+                })
+        
+        order_data = {
+            "id": order.id,
+            "order_number": order.order_number,
+            "status": order.status,
+            "total_amount": order.total_amount,
+            "delivery_address": order.delivery_address,
+            "delivery_type": order.delivery_type,
+            "delivery_fee": order.delivery_fee_amount,
+            "payment_method": order.payment_method,
+            "payment_status": order.payment_status,
+            "created_at": order.created_at.isoformat() if order.created_at else None,
+            "assigned_at": order.assigned_at.isoformat() if order.assigned_at else None,
+            "delivery_notes": order.delivery_notes,
+            "delivery_guy": delivery_guy,
+            "customer": customer,
+            "order_items": order_items
+        }
+        
+        data = {"order": order_data}
+        enc = encrypt_payload(data)
+        return jsonify({"success": True, "encrypted_data": enc}), 200
+        
+    except Exception as e:
+        print(f"Get delivery order detail admin error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+@delivery_bp.route("/admin/orders/<int:order_id>/pickup", methods=["POST"])
+@require_admin_auth
+def pickup_order_admin(current_admin, order_id):
+    """Mark order as picked up (admin action)"""
+    try:
+        order = Order.query.get(order_id)
+        if not order:
+            return jsonify({"error": "Order not found"}), 404
+        
+        if not order.delivery_guy_id:
+            return jsonify({"error": "Order not assigned to delivery"}), 400
+        
+        # Update order status to picked up
+        order.status = "picked_up"
+        order.delivery_notes = "Order picked up by delivery guy"
+        order.updated_at = datetime.utcnow()
+        
+        db.session.commit()
+        
+        data = {"message": "Order marked as picked up successfully"}
+        enc = encrypt_payload(data)
+        return jsonify({"success": True, "encrypted_data": enc}), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Pickup order admin error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+@delivery_bp.route("/admin/orders/<int:order_id>/deliver", methods=["POST"])
+@require_admin_auth
+def deliver_order_admin(current_admin, order_id):
+    """Mark order as delivered (admin action)"""
+    try:
+        order = Order.query.get(order_id)
+        if not order:
+            return jsonify({"error": "Order not found"}), 404
+        
+        if not order.delivery_guy_id:
+            return jsonify({"error": "Order not assigned to delivery"}), 400
+        
+        # Update order status to delivered
+        order.status = "delivered"
+        order.delivery_notes = "Order delivered successfully"
+        order.updated_at = datetime.utcnow()
+        
+        db.session.commit()
+        
+        data = {"message": "Order marked as delivered successfully"}
+        enc = encrypt_payload(data)
+        return jsonify({"success": True, "encrypted_data": enc}), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Deliver order admin error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+@delivery_bp.route("/admin/orders/<int:order_id>/status", methods=["PUT"])
+@require_admin_auth
+def update_order_status_admin(current_admin, order_id):
+    """Update order status (admin action)"""
+    try:
+        encrypted_data = request.json.get("payload")
+        if not encrypted_data:
+            return jsonify({"error": "Missing encrypted payload"}), 400
+        
+        data = decrypt_payload(encrypted_data)
+        new_status = data.get("status")
+        delivery_notes = data.get("delivery_notes", "")
+        
+        if not new_status:
+            return jsonify({"error": "Status is required"}), 400
+        
+        order = Order.query.get(order_id)
+        if not order:
+            return jsonify({"error": "Order not found"}), 404
+        
+        # Import the order service function
+        from services.order_service import update_order_items_status
+        
+        # Update order items status first
+        items_result, items_status_code = update_order_items_status(order_id, new_status)
+        if items_status_code != 200:
+            return jsonify({"error": items_result.get("error", "Failed to update order items")}), items_status_code
+        
+        # Update order status and notes
+        order.status = new_status
+        order.delivery_notes = delivery_notes
+        order.updated_at = datetime.utcnow()
+        
+        db.session.commit()
+        
+        # Include order items update info in response
+        response_data = {
+            "message": "Order status and order items updated successfully",
+            "order_items_updated": items_result.get("total_updated", 0),
+            "order_items_skipped": items_result.get("total_skipped", 0)
+        }
+        enc = encrypt_payload(response_data)
+        return jsonify({"success": True, "encrypted_data": enc}), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Update order status admin error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+# ============================================================================
 # DELIVERY ONBOARDING MANAGEMENT (ADMIN)
 # ============================================================================
 
@@ -1106,6 +1352,14 @@ def update_order_status_route(current_admin, order_id):
         if not order:
             return jsonify({"error": "Order not found"}), 404
         
+        # Import the order service function
+        from services.order_service import update_order_items_status
+        
+        # Update order items status first
+        items_result, items_status_code = update_order_items_status(order_id, new_status)
+        if items_status_code != 200:
+            return jsonify({"error": items_result.get("error", "Failed to update order items")}), items_status_code
+        
         # Update order status
         order.status = new_status
         if delivery_notes:
@@ -1113,8 +1367,13 @@ def update_order_status_route(current_admin, order_id):
         
         db.session.commit()
         
-        order_dict = order.as_dict()
-        enc = encrypt_payload({"order": order_dict})
+        # Include order items update info in response
+        response_data = {
+            "order": order.as_dict(),
+            "order_items_updated": items_result.get("total_updated", 0),
+            "order_items_skipped": items_result.get("total_skipped", 0)
+        }
+        enc = encrypt_payload(response_data)
         return jsonify({"success": True, "encrypted_data": enc}), 200
     except Exception as e:
         print(f"Update order status error: {str(e)}")
@@ -1139,6 +1398,14 @@ def pickup_order_route(current_admin, order_id):
         if not order.delivery_guy_id:
             return jsonify({"error": "Order is not assigned to any delivery guy"}), 400
         
+        # Import the order service function
+        from services.order_service import update_order_items_status
+        
+        # Update order items status first
+        items_result, items_status_code = update_order_items_status(order_id, "out_for_delivery")
+        if items_status_code != 200:
+            return jsonify({"error": items_result.get("error", "Failed to update order items")}), items_status_code
+        
         # Update order status to out for delivery
         order.status = "out_for_delivery"
         if pickup_notes:
@@ -1146,8 +1413,13 @@ def pickup_order_route(current_admin, order_id):
         
         db.session.commit()
         
-        order_dict = order.as_dict()
-        enc = encrypt_payload({"order": order_dict})
+        # Include order items update info in response
+        response_data = {
+            "order": order.as_dict(),
+            "order_items_updated": items_result.get("total_updated", 0),
+            "order_items_skipped": items_result.get("total_skipped", 0)
+        }
+        enc = encrypt_payload(response_data)
         return jsonify({"success": True, "encrypted_data": enc}), 200
     except Exception as e:
         print(f"Pickup order error: {str(e)}")
@@ -1172,6 +1444,14 @@ def deliver_order_route(current_admin, order_id):
         if not order.delivery_guy_id:
             return jsonify({"error": "Order is not assigned to any delivery guy"}), 400
         
+        # Import the order service function
+        from services.order_service import update_order_items_status
+        
+        # Update order items status first
+        items_result, items_status_code = update_order_items_status(order_id, "delivered")
+        if items_status_code != 200:
+            return jsonify({"error": items_result.get("error", "Failed to update order items")}), items_status_code
+        
         # Update order status to delivered
         order.status = "delivered"
         if delivery_notes:
@@ -1179,8 +1459,13 @@ def deliver_order_route(current_admin, order_id):
         
         db.session.commit()
         
-        order_dict = order.as_dict()
-        enc = encrypt_payload({"order": order_dict})
+        # Include order items update info in response
+        response_data = {
+            "order": order.as_dict(),
+            "order_items_updated": items_result.get("total_updated", 0),
+            "order_items_skipped": items_result.get("total_skipped", 0)
+        }
+        enc = encrypt_payload(response_data)
         return jsonify({"success": True, "encrypted_data": enc}), 200
     except Exception as e:
         print(f"Deliver order error: {str(e)}")

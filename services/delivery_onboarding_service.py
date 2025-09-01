@@ -229,6 +229,11 @@ def approve_onboarding(onboarding_id, admin_id, notes=None):
         # Update onboarding status
         onboarding.update_status('approved', admin_id, notes)
         
+        # CRITICAL FIX: Set delivery_guy_id to the onboarding ID itself
+        # This links the onboarding record to the delivery guy system
+        onboarding.delivery_guy_id = onboarding.id
+        print(f"🔗 Set delivery_guy_id to onboarding ID: {onboarding.id}")
+        
         # Update auth user if exists (check by email first, then phone number)
         auth_user = None
         if onboarding.email:
@@ -241,7 +246,9 @@ def approve_onboarding(onboarding_id, admin_id, notes=None):
         
         if auth_user:
             auth_user.is_onboarded = True  # Mark as onboarded
-            print(f"✅ Updated auth user - is_onboarded: True")
+            # CRITICAL FIX: Link the auth user to the delivery guy
+            auth_user.delivery_guy_id = onboarding.id
+            print(f"✅ Updated auth user - is_onboarded: True, delivery_guy_id: {onboarding.id}")
         else:
             print(f"⚠️ No auth user found for email: {onboarding.email} or phone: {onboarding.primary_number}")
         

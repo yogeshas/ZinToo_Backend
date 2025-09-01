@@ -59,6 +59,9 @@ class DeliveryOnboarding(db.Model):
     approved_by = db.Column(db.Integer, db.ForeignKey("admin.id"), nullable=True)
     approved_at = db.Column(db.DateTime, nullable=True)
     
+    # Delivery Guy ID - Links to the delivery guy system
+    delivery_guy_id = db.Column(db.Integer, nullable=True)
+    
     # Relationships
     delivery_loyalties = db.relationship("Delivery_Loyalty", back_populates="delivery_user")
 
@@ -101,6 +104,7 @@ class DeliveryOnboarding(db.Model):
             "admin_notes": self.admin_notes,
             "approved_by": self.approved_by,
             "approved_at": self.approved_at.isoformat() if self.approved_at else None,
+            "delivery_guy_id": self.delivery_guy_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None
         }

@@ -67,6 +67,25 @@ def _serialize_order(order: Order) -> Dict[str, Any]:
         for item in items
     ]
 
+    # Add delivery purpose information
+    try:
+        from models.exchange import Exchange
+        exchanges = Exchange.query.filter_by(order_id=order.id).all()
+        
+        if exchanges:
+            order_dict["delivery_purpose"] = "exchange"
+            order_dict["exchange_count"] = len(exchanges)
+            order_dict["exchange_statuses"] = [ex.status for ex in exchanges]
+        else:
+            order_dict["delivery_purpose"] = "normal"
+            order_dict["exchange_count"] = 0
+            order_dict["exchange_statuses"] = []
+    except Exception as e:
+        print(f"Error getting delivery purpose: {e}")
+        order_dict["delivery_purpose"] = "unknown"
+        order_dict["exchange_count"] = 0
+        order_dict["exchange_statuses"] = []
+
     return order_dict
 
 
@@ -238,60 +257,183 @@ def reject_order_by_delivery_guy(onboarding_id: int, order_id: int, rejection_re
         db.session.rollback()
         return {"success": False, "message": "Failed to reject order"}
 
-def out_for_delivery_order_by_delivery_guy(delivery_guy_id: int, order_id: int, out_for_delivery_reason: str) -> Dict[str, Any]:
-    """Out for delivery an order by delivery guy"""
+def out_for_delivery_order_by_delivery_guy(delivery_guy_id: int, order_id: int, out_for_delivery_reason: str, is_exchange: bool = False) -> Dict[str, Any]:
+    """Out for delivery an order by delivery guy with exchange status tracking"""
     try:
         order = Order.query.filter_by(id=order_id, delivery_guy_id=delivery_guy_id).first()
         if not order:
             return {"success": False, "message": "Order not found or not assigned to you"}
+
+        # Auto-detect if this is an exchange delivery if not explicitly specified
+        if not is_exchange:
+            from models.exchange import Exchange
+            exchanges = Exchange.query.filter_by(order_id=order_id, delivery_guy_id=delivery_guy_id).all()
+            is_exchange = len(exchanges) > 0
+            if is_exchange:
+                print(f"Auto-detected exchange delivery for order {order_id}")
 
         # Update order status to out for delivery
         order.status = "out_for_delivery"
         order.updated_at = datetime.utcnow()
         
-        # Add out for delivery note
-        order.delivery_notes = (order.delivery_notes or "") + f"\n[OUT FOR DELIVERY] Order out for delivery by delivery personnel at {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}. Reason: {out_for_delivery_reason}"
+        # Set exchange delivery flag
+        order.is_exchange_delivery = is_exchange
+        
+        # Add out for delivery note with delivery type
+        timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+        delivery_type = "EXCHANGE" if is_exchange else "NORMAL"
+        
+        order.delivery_notes = (order.delivery_notes or "") + f"\n[OUT FOR DELIVERY - {delivery_type}] Order out for delivery by delivery personnel at {timestamp}. Reason: {out_for_delivery_reason}"
 
+        # If this is an exchange delivery, also update exchange status
+        if is_exchange:
+            from models.exchange import Exchange
+            exchanges = Exchange.query.filter_by(order_id=order_id, delivery_guy_id=delivery_guy_id).all()
+            
+            if exchanges:
+                for exchange in exchanges:
+                    if exchange.status == "assigned":  # Only update if exchange is assigned for delivery
+                        exchange.status = "out_for_delivery"
+                        exchange.updated_at = datetime.utcnow()
+                        print(f"Updated exchange {exchange.id} status to out_for_delivery")
+                    else:
+                        print(f"Exchange {exchange.id} status is {exchange.status}, not updating")
+            else:
+                print(f"No exchanges found for order {order_id} assigned to delivery guy {delivery_guy_id}")
 
         db.session.commit()
 
         return {
-            "success": True,
-            "message": "Order out for delivery successfully",
-            "order": _serialize_order(order)
+            "success": True, 
+            "message": f"Order marked as out for delivery ({delivery_type.lower()}) successfully",
+            "order": _serialize_order(order),
+            "delivery_type": delivery_type.lower(),
+            "is_exchange": is_exchange
         }
         
     except Exception as e:
         print(f"Error out for delivery order: {e}")
         db.session.rollback()
-        return {"success": False, "message": "Failed to out for delivery order"}
+        return {"success": False, "message": "Failed to mark order as out for delivery"}
 
 def delivered_order_by_delivery_guy(delivery_guy_id: int, order_id: int, delivered_reason: str) -> Dict[str, Any]:
-    """Delivered an order by delivery guy"""
+    """Delivered an order by delivery guy with exchange status tracking"""
     try:
         order = Order.query.filter_by(id=order_id, delivery_guy_id=delivery_guy_id).first()
         if not order:
             return {"success": False, "message": "Order not found or not assigned to you"}
 
+        # Check if this was an exchange delivery
+        is_exchange = getattr(order, 'is_exchange_delivery', False)
+        
         # Update order status to delivered
         order.status = "delivered"
         order.updated_at = datetime.utcnow()
         
-        # Add delivered note
-        order.delivery_notes = (order.delivery_notes or "") + f"\n[DELIVERED] Order delivered by delivery personnel at {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}. Reason: {delivered_reason}"
+        # Add delivered note with delivery type
+        timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+        delivery_type = "EXCHANGE" if is_exchange else "NORMAL"
+        
+        order.delivery_notes = (order.delivery_notes or "") + f"\n[DELIVERED - {delivery_type}] Order delivered by delivery personnel at {timestamp}. Reason: {delivered_reason}"
+
+        # If this was an exchange delivery, also update exchange status
+        if is_exchange:
+            from models.exchange import Exchange
+            exchanges = Exchange.query.filter_by(order_id=order_id, delivery_guy_id=delivery_guy_id).all()
+            
+            if exchanges:
+                for exchange in exchanges:
+                    if exchange.status == "out_for_delivery":  # Only update if exchange is out for delivery
+                        exchange.status = "delivered"
+                        exchange.delivered_at = datetime.utcnow()
+                        exchange.updated_at = datetime.utcnow()
+                        print(f"Updated exchange {exchange.id} status to delivered")
+                    else:
+                        print(f"Exchange {exchange.id} status is {exchange.status}, not updating")
+            else:
+                print(f"No exchanges found for order {order_id} assigned to delivery guy {delivery_guy_id}")
 
         db.session.commit()
 
         return {
             "success": True,
-            "message": "Order delivered successfully",
-            "order": _serialize_order(order)
+            "message": f"Order delivered successfully ({delivery_type.lower()})",
+            "order": _serialize_order(order),
+            "delivery_type": delivery_type.lower(),
+            "is_exchange": is_exchange
         }
         
     except Exception as e:
         print(f"Error delivering order: {e}")
         db.session.rollback()
         return {"success": False, "message": "Failed to deliver order"}
+
+
+def get_order_delivery_purpose(order_id: int) -> Dict[str, Any]:
+    """Get delivery purpose information for an order"""
+    try:
+        from models.exchange import Exchange
+        
+        # Check if order has exchanges
+        exchanges = Exchange.query.filter_by(order_id=order_id).all()
+        
+        if exchanges:
+            # Check exchange statuses
+            exchange_statuses = [ex.status for ex in exchanges]
+            
+            if "out_for_delivery" in exchange_statuses:
+                return {
+                    "purpose": "exchange",
+                    "type": "exchange_delivery",
+                    "exchange_count": len(exchanges),
+                    "exchange_statuses": exchange_statuses,
+                    "message": "Exchange delivery in progress"
+                }
+            elif "delivered" in exchange_statuses:
+                return {
+                    "purpose": "exchange",
+                    "type": "exchange_completed",
+                    "exchange_count": len(exchanges),
+                    "exchange_statuses": exchange_statuses,
+                    "message": "Exchange delivery completed"
+                }
+            else:
+                return {
+                    "purpose": "exchange",
+                    "type": "exchange_pending",
+                    "exchange_count": len(exchanges),
+                    "exchange_statuses": exchange_statuses,
+                    "message": "Exchange pending delivery"
+                }
+        else:
+            # Check order status for normal delivery
+            order = Order.query.get(order_id)
+            if order and order.status == "out_for_delivery":
+                return {
+                    "purpose": "normal",
+                    "type": "normal_delivery",
+                    "message": "Normal order delivery in progress"
+                }
+            elif order and order.status == "delivered":
+                return {
+                    "purpose": "normal",
+                    "type": "normal_completed",
+                    "message": "Normal order delivery completed"
+                }
+            else:
+                return {
+                    "purpose": "normal",
+                    "type": "normal_pending",
+                    "message": "Normal order pending delivery"
+                }
+                
+    except Exception as e:
+        print(f"Error getting delivery purpose: {e}")
+        return {
+            "purpose": "unknown",
+            "type": "unknown",
+            "message": "Unable to determine delivery purpose"
+        }
 
 def get_delivery_loyalty_with_order_tracking(delivery_user_id: int) -> Optional[Dict[str, Any]]:
     """Get delivery loyalty information including order tracking"""

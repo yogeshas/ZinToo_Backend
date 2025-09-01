@@ -2,7 +2,6 @@
 from flask import Blueprint, request, jsonify
 from services.order_service import (
     get_all_orders,
-    get_order_by_id,
     update_order_status,
     cancel_order
 )
@@ -51,7 +50,7 @@ def get_orders(current_admin):
 def get_order(current_admin, order_id):
     """Get order by ID with detailed information"""
     try:
-        order = get_order_by_id(order_id)
+        order = Order.query.get(order_id)
         if not order:
             return jsonify({"error": "Order not found"}), 404
         
@@ -96,7 +95,7 @@ def update_status(current_admin, order_id):
             return jsonify(result), status_code
         
         # Get the updated order
-        updated_order = get_order_by_id(order_id)
+        updated_order = Order.query.get(order_id)
         if not updated_order:
             return jsonify({"error": "Order not found"}), 404
         

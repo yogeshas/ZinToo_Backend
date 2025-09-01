@@ -7,6 +7,7 @@ class Cart(db.Model):
     customer_id = db.Column(db.Integer, db.ForeignKey("customer.id"), nullable=False)
     product_id = db.Column(db.Integer, db.ForeignKey("product.id"), nullable=False)
     quantity = db.Column(db.Integer, default=1, nullable=False)
+    selected_size = db.Column(db.String(20), nullable=True)  # Store the selected size
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
     updated_at = db.Column(db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
 
@@ -20,11 +21,13 @@ class Cart(db.Model):
             "customer_id": self.customer_id,
             "product_id": self.product_id,
             "quantity": self.quantity,
+            "selected_size": self.selected_size,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "product": self.product.to_dict() if self.product else None,
-            "customer": self.customer.as_dict() if self.customer else None
+            "customer": self.customer.as_dict() if self.customer else None,
+            "sizes": getattr(self, 'sizes', {})  # Include sizes data if available
         }
 
     def __repr__(self):
-        return f"<Cart {self.id} - Customer: {self.customer_id}, Product: {self.product_id}, Qty: {self.quantity}>"
+        return f"<Cart {self.id} - Customer: {self.customer_id}, Product: {self.product_id}, Size: {self.selected_size}, Qty: {self.quantity}>"

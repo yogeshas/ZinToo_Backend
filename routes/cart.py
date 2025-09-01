@@ -52,7 +52,8 @@ def get_cart():
     try:
         customer_id = request.customer_id
         cart_items = get_customer_cart(customer_id)
-        data = {"cart_items": [item.to_dict() for item in cart_items]}
+        # cart_items are now dictionaries with sizes data already included
+        data = {"cart_items": cart_items}
         enc = encrypt_payload(data)
         return jsonify({"success": True, "encrypted_data": enc})
     except Exception as e:
@@ -84,11 +85,12 @@ def add_to_cart_route():
         customer_id = request.customer_id
         product_id = data.get("product_id")
         quantity = data.get("quantity", 1)
+        selected_size = data.get("selected_size")  # Get selected size
         
         if not product_id:
             return jsonify({"success": False, "error": "Product ID is required"}), 400
         
-        cart_item = add_to_cart(customer_id, product_id, quantity)
+        cart_item = add_to_cart(customer_id, product_id, quantity, selected_size)
         data = {"cart_item": cart_item.to_dict()}
         enc = encrypt_payload(data)
         return jsonify({"success": True, "encrypted_data": enc}), 201

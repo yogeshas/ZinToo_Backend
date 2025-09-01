@@ -5,7 +5,7 @@ from extensions import db
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime
 
-def add_to_cart(customer_id: int, product_id: int, quantity: int = 1):
+def add_to_cart(customer_id: int, product_id: int, quantity: int = 1, selected_size: str = None):
     """Add product to cart or update quantity if already exists"""
     try:
         # Check if product exists
@@ -18,10 +18,11 @@ def add_to_cart(customer_id: int, product_id: int, quantity: int = 1):
         if not customer:
             raise ValueError("Customer not found")
         
-        # Check if item already exists in cart
+        # Check if item already exists in cart with same size
         existing_cart_item = Cart.query.filter_by(
             customer_id=customer_id, 
-            product_id=product_id
+            product_id=product_id,
+            selected_size=selected_size
         ).first()
         
         if existing_cart_item:
@@ -35,7 +36,8 @@ def add_to_cart(customer_id: int, product_id: int, quantity: int = 1):
             cart_item = Cart(
                 customer_id=customer_id,
                 product_id=product_id,
-                quantity=quantity
+                quantity=quantity,
+                selected_size=selected_size
             )
             db.session.add(cart_item)
             db.session.commit()
@@ -85,10 +87,51 @@ def remove_from_cart(cart_id: int):
         raise ValueError(f"Error removing from cart: {str(e)}")
 
 def get_customer_cart(customer_id: int):
-    """Get all cart items for a customer"""
+    """Get all cart items for a customer with product sizes data"""
     try:
-        cart_items = Cart.query.filter_by(customer_id=customer_id).all()
-        return cart_items
+        # Use join to get product data including sizes
+        cart_items = db.session.query(Cart, Product).join(Product).filter(Cart.customer_id == customer_id).all()
+        
+        # Convert to cart items with enhanced product data
+        enhanced_cart_items = []
+        for cart_item, product in cart_items:
+            # Get the cart item as dictionary
+            cart_dict = cart_item.to_dict()
+            
+            # Debug: Show cart item data (reduced logging)
+            print(f"[CART SERVICE] Cart item {cart_item.id}: selected_size={cart_item.selected_size}")
+            
+            # Add product sizes data to the cart item for frontend validation
+            if hasattr(product, 'size') and product.size:
+                try:
+                    # Parse sizes if it's a JSON string
+                    if isinstance(product.size, str):
+                        import json
+                        cart_dict['sizes'] = json.loads(product.size)
+                    else:
+                        cart_dict['sizes'] = product.size
+                except Exception as e:
+                    print(f"[CART SERVICE] Error parsing product sizes: {e}")
+                    cart_dict['sizes'] = {}
+            else:
+                cart_dict['sizes'] = {}
+            
+            # Also add product sizes to the product object for consistency
+            if hasattr(product, 'size') and product.size:
+                try:
+                    if isinstance(product.size, str):
+                        import json
+                        cart_dict['product']['sizes'] = json.loads(product.size)
+                    else:
+                        cart_dict['product']['sizes'] = product.size
+                except Exception as e:
+                    print(f"[CART SERVICE] Error parsing product sizes in product: {e}")
+                    cart_dict['product']['sizes'] = {}
+            
+            enhanced_cart_items.append(cart_dict)
+        
+        print(f"[CART SERVICE] Returning {len(enhanced_cart_items)} enhanced cart items")
+        return enhanced_cart_items
     except Exception as e:
         raise ValueError(f"Error getting cart: {str(e)}")
 

@@ -15,7 +15,13 @@ class Exchange(db.Model):
     # Exchange details
     old_size = db.Column(db.String(20), nullable=False)
     new_size = db.Column(db.String(20), nullable=False)
+    old_quantity = db.Column(db.Integer, default=1, nullable=False)  # Quantity being exchanged
+    new_quantity = db.Column(db.Integer, default=1, nullable=False)  # New quantity requested
     reason = db.Column(db.String(500), nullable=True)
+    
+    # Additional payment info for quantity changes
+    additional_payment_required = db.Column(db.Boolean, default=False)
+    additional_amount = db.Column(db.Float, default=0.0)
     
     # Status tracking
     status = db.Column(db.String(50), default="initiated", nullable=False)  # initiated, approved, out_for_delivery, delivered, rejected
@@ -36,7 +42,7 @@ class Exchange(db.Model):
     
     # Relationships
     order = db.relationship("Order", backref="exchanges")
-    order_item = db.relationship("OrderItem", backref="exchanges")
+    order_item = db.relationship("OrderItem", backref="exchanges", foreign_keys=[order_item_id])
     customer = db.relationship("Customer", backref="exchanges")
     product = db.relationship("Product", backref="exchanges")
     admin = db.relationship("Admin", backref="approved_exchanges")
@@ -54,7 +60,11 @@ class Exchange(db.Model):
             "product_id": self.product_id,
             "old_size": self.old_size,
             "new_size": self.new_size,
+            "old_quantity": self.old_quantity,
+            "new_quantity": self.new_quantity,
             "reason": self.reason,
+            "additional_payment_required": self.additional_payment_required,
+            "additional_amount": self.additional_amount,
             "status": self.status,
             "admin_notes": self.admin_notes,
             "approved_by": self.approved_by,
@@ -74,6 +84,10 @@ class Exchange(db.Model):
         """Check if exchange can be assigned for delivery"""
         return self.status == "approved"
     
+    def can_start_delivery(self):
+        """Check if delivery can be started (by delivery team)"""
+        return self.status == "assigned"
+    
     def can_mark_delivered(self):
         """Check if exchange can be marked as delivered"""
         return self.status == "out_for_delivery"
@@ -89,14 +103,22 @@ class Exchange(db.Model):
         return True, "Exchange approved successfully"
     
     def assign_delivery(self, delivery_guy_id):
-        """Assign delivery guy for exchange"""
+        """Assign delivery guy for exchange (admin action)"""
         if not self.can_assign_delivery():
             return False, "Exchange cannot be assigned for delivery in current status"
         
-        self.status = "out_for_delivery"
+        self.status = "assigned"  # Changed from "out_for_delivery" to "assigned"
         self.delivery_guy_id = delivery_guy_id
         self.assigned_at = get_current_time()
         return True, "Delivery assigned successfully"
+    
+    def start_delivery(self):
+        """Start delivery (delivery team action)"""
+        if not self.can_start_delivery():
+            return False, "Delivery cannot be started in current status"
+        
+        self.status = "out_for_delivery"
+        return True, "Delivery started successfully"
     
     def mark_delivered(self):
         """Mark exchange as delivered"""
