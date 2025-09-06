@@ -28,6 +28,7 @@ class Product(db.Model):
     is_new = db.Column(db.Boolean, default=False)
     shared_count = db.Column(db.Integer, default=0)
     discount_value = db.Column(db.Float, default=0.0)
+    barcode = db.Column(db.String(50), unique=True, nullable=True, index=True)
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
     updated_at = db.Column(db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
 
@@ -137,6 +138,7 @@ class Product(db.Model):
             "is_trending": self.is_trending,
             "is_new": self.is_new,
             "shared_count": self.shared_count,
+            "barcode": self.barcode,
             "final_price": round(final_price, 2),
             "original_price": round(original_price, 2),
             "category": self.category.category_name if self.category else None,

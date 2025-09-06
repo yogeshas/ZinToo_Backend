@@ -63,6 +63,11 @@ def _serialize_order(order: Order) -> Dict[str, Any]:
             "quantity": item.quantity,
             "unit_price": item.unit_price,
             "total_price": item.total_price,
+            "selected_size": getattr(item, 'selected_size', None),
+            "status": getattr(item, 'status', 'pending'),
+            "delivery_track": getattr(item, 'delivery_track', None),
+            "delivery_track_display": _get_delivery_track_display(getattr(item, 'delivery_track', 'normal')),
+            "delivery_guy_id": getattr(item, 'delivery_guy_id', None),
         }
         for item in items
     ]
@@ -133,41 +138,177 @@ def serialize_orders_with_customer(orders: List[Order]) -> List[Dict[str, Any]]:
                 "phone_number": customer.get_phone_number() if hasattr(customer, "get_phone_number") else None,
             }
             order_dict["customer_phone_number"] = customer.get_phone_number() if hasattr(customer, "get_phone_number") else None
+        
+        # Add delivery track and overall status
+        order_dict["delivery_track"] = getattr(order, 'delivery_track', 'normal')
+        order_dict["overall_status"] = getattr(order, 'overall_status', order.status)
+        order_dict["delivery_track_display"] = _get_delivery_track_display(getattr(order, 'delivery_track', 'normal'))
+        
+        # Add assigned items information
+        assigned_items = getattr(order, 'assigned_items', [])
+        order_dict["assigned_items"] = []
+        for item in assigned_items:
+            item_dict = {
+                "id": item.id,
+                "product_id": item.product_id,
+                "product_name": item.product_name,
+                "product_image": item.product_image,
+                "quantity": item.quantity,
+                "unit_price": item.unit_price,
+                "total_price": item.total_price,
+                "selected_size": getattr(item, 'selected_size', None),
+                "status": getattr(item, 'status', 'pending'),
+                "delivery_track": getattr(item, 'delivery_track', 'normal'),
+                "delivery_track_display": _get_delivery_track_display(getattr(item, 'delivery_track', 'normal')),
+                "delivery_guy_id": getattr(item, 'delivery_guy_id', None),
+            }
+            order_dict["assigned_items"].append(item_dict)
+        
         serialized.append(order_dict)
     return serialized
 
 def get_orders_for_delivery_guy(
     onboarding_id: int, status_filter: Optional[str] = None
 ) -> List[Order]:
-    query = Order.query.filter_by(delivery_guy_id=onboarding_id)
+    # NEW LOGIC: Get orders based on order_item status and delivery_track
+    # Group by status and delivery_track type
+    
+    # Get all order items assigned to this delivery guy
+    order_items = OrderItem.query.filter_by(delivery_guy_id=onboarding_id).all()
+    
+    if not order_items:
+        return []
+    
+    # Group order items by order_id and determine the overall status
+    order_groups = {}
+    for item in order_items:
+        order_id = item.order_id
+        if order_id not in order_groups:
+            order_groups[order_id] = {
+                'items': [],
+                'statuses': set(),
+                'delivery_tracks': set(),
+                'order': None
+            }
+        
+        order_groups[order_id]['items'].append(item)
+        order_groups[order_id]['statuses'].add(getattr(item, 'status', 'pending'))
+        order_groups[order_id]['delivery_tracks'].add(getattr(item, 'delivery_track', 'normal'))
+    
+    # Get the actual orders
+    order_ids = list(order_groups.keys())
+    orders = Order.query.filter(Order.id.in_(order_ids)).all()
+    
+    # Attach order data to groups
+    for order in orders:
+        if order.id in order_groups:
+            order_groups[order.id]['order'] = order
+    
+    # Filter based on status_filter
+    filtered_orders = []
+    for order_id, group in order_groups.items():
+        order = group['order']
+        if not order:
+            continue
+            
+        # Determine overall status based on item statuses
+        overall_status = _determine_overall_status(group['statuses'], group['delivery_tracks'])
+        
+        # Apply status filter
+        if status_filter:
+            status_filter = status_filter.lower()
+            if status_filter == "assigned" or status_filter is None:
+                # Show all assigned orders
+                pass
+            elif status_filter == "pending":
+                if overall_status != "pending":
+                    continue
+            elif status_filter == "confirmed" or status_filter == "approved":
+                if overall_status not in ["confirmed", "approved"]:
+                    continue
+            elif status_filter == "delivered":
+                if overall_status != "delivered":
+                    continue
+            elif status_filter == "cancelled":
+                if overall_status != "cancelled":
+                    continue
+            elif status_filter == "exchange":
+                if "exchange_pickup" not in group['delivery_tracks']:
+                    continue
+            elif status_filter == "cancel_pickup":
+                if "cancel_pickup" not in group['delivery_tracks']:
+                    continue
+            else:
+                # Unknown filter
+                continue
+        
+        # Add order with enhanced data
+        order.delivery_track = _determine_delivery_track(group['delivery_tracks'])
+        order.overall_status = overall_status
+        order.assigned_items = group['items']
+        filtered_orders.append(order)
+    
+    return sorted(filtered_orders, key=lambda x: x.id, reverse=True)
 
-    if status_filter:
-        status_filter = status_filter.lower()
-        if status_filter in ("approved", "active"):
-            query = query.filter(
-                Order.status.in_(
-                    [
-                        "confirmed",
-                        "processing",
-                        "shipped",
-                        "out_for_delivery",
-                    ]
-                )
-            )
-        elif status_filter in ("cancelled", "canceled"):
-            query = query.filter(Order.status == "cancelled")
-        elif status_filter in ("delivered", "completed"):
-            query = query.filter(Order.status == "delivered")
-        elif status_filter == "rejected":
-            query = query.filter(Order.status == "rejected")
-        elif status_filter == "assigned":
-            # Any order assigned to the delivery guy regardless of status
-            pass
+def _determine_overall_status(statuses, delivery_tracks):
+    """Determine overall status based on item statuses and delivery tracks"""
+    statuses = list(statuses)
+    delivery_tracks = list(delivery_tracks)
+    
+    # If any item is cancelled, overall is cancelled
+    if "cancelled" in statuses:
+        return "cancelled"
+    
+    # If any item is rejected, overall is rejected
+    if "rejected" in statuses:
+        return "rejected"
+    
+    # If any item is delivered, check if all are delivered
+    if "delivered" in statuses:
+        if all(status == "delivered" for status in statuses):
+            return "delivered"
         else:
-            # Unknown filter: return empty to be explicit
-            return []
+            return "processing"
+    
+    # If any item is out_for_delivery, overall is out_for_delivery
+    if "out_for_delivery" in statuses:
+        return "out_for_delivery"
+    
+    # If any item is processing, overall is processing
+    if "processing" in statuses:
+        return "processing"
+    
+    # If any item is confirmed or approved, overall is confirmed
+    if "confirmed" in statuses or "approved" in statuses:
+        return "confirmed"
+    
+    # If any item is assigned, overall is assigned
+    if "assigned" in statuses:
+        return "assigned"
+    
+    # Default to pending
+    return "pending"
 
-    return query.order_by(Order.id.desc()).all()
+def _determine_delivery_track(delivery_tracks):
+    """Determine delivery track type"""
+    delivery_tracks = list(delivery_tracks)
+    
+    # Priority: exchange_pickup > cancel_pickup > normal
+    if "exchange_pickup" in delivery_tracks:
+        return "exchange_pickup"
+    elif "cancel_pickup" in delivery_tracks:
+        return "cancel_pickup"
+    else:
+        return "normal"
+
+def _get_delivery_track_display(delivery_track):
+    """Get human-readable delivery track display"""
+    track_displays = {
+        'normal': 'Normal Delivery',
+        'cancel_pickup': 'Cancel Pickup',
+        'exchange_pickup': 'Exchange Pickup'
+    }
+    return track_displays.get(delivery_track, 'Normal Delivery')
 
 
 def get_order_detail_for_delivery_guy(
@@ -185,20 +326,38 @@ def approve_order_by_delivery_guy(onboarding_id: int, order_id: int) -> Dict[str
     """Approve an order by delivery guy"""
     try:
         # Get the order
-        order = Order.query.filter_by(id=order_id, delivery_guy_id=onboarding_id).first()
+        order = Order.query.get(order_id)
         if not order:
-            return {"success": False, "message": "Order not found or not assigned to you"}
+            return {"success": False, "message": "Order not found"}
+        
+        # Check if delivery guy has any items assigned in this order
+        assigned_items = OrderItem.query.filter_by(
+            order_id=order_id, 
+            delivery_guy_id=onboarding_id
+        ).all()
+        
+        if not assigned_items:
+            return {"success": False, "message": "No items assigned to you in this order"}
         
         # Check if order can be approved
         if order.status in ["delivered", "cancelled", "rejected"]:
             return {"success": False, "message": f"Cannot approve order with status: {order.status}"}
         
-        # Update order status to confirmed
-        order.status = "confirmed"
+        # Update assigned items status to confirmed
+        for item in assigned_items:
+            item.status = "confirmed"
+            item.updated_at = datetime.utcnow()
+        
+        # Update order status to confirmed (if all items are confirmed)
+        all_items = OrderItem.query.filter_by(order_id=order_id).all()
+        if all(item.status in ["confirmed", "delivered"] for item in all_items):
+            order.status = "confirmed"
+        
         order.updated_at = datetime.utcnow()
         
         # Add approval note
-        order.delivery_notes = (order.delivery_notes or "") + f"\n[APPROVED] Order approved by delivery personnel at {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}"
+        timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+        order.delivery_notes = (order.delivery_notes or "") + f"\n[APPROVED] Order approved by delivery personnel at {timestamp}"
         
         # Update delivery loyalty table
         loyalty_record = Delivery_Loyalty.query.filter_by(delivery_user_id=onboarding_id).first()
@@ -222,21 +381,52 @@ def approve_order_by_delivery_guy(onboarding_id: int, order_id: int) -> Dict[str
 def reject_order_by_delivery_guy(onboarding_id: int, order_id: int, rejection_reason: str) -> Dict[str, Any]:
     """Reject an order by delivery guy"""
     try:
+        print(f"🔍 [REJECT ORDER] Delivery guy {onboarding_id} trying to reject order {order_id}")
+        
         # Get the order
-        order = Order.query.filter_by(id=order_id, delivery_guy_id=onboarding_id).first()
+        order = Order.query.get(order_id)
         if not order:
-            return {"success": False, "message": "Order not found or not assigned to you"}
+            print(f"❌ [REJECT ORDER] Order {order_id} not found")
+            return {"success": False, "message": "Order not found"}
+        
+        print(f"✅ [REJECT ORDER] Found order {order_id} with status: {order.status}")
+        
+        # Check if delivery guy has any items assigned in this order
+        assigned_items = OrderItem.query.filter_by(
+            order_id=order_id, 
+            delivery_guy_id=onboarding_id
+        ).all()
+        
+        print(f"🔍 [REJECT ORDER] Found {len(assigned_items)} items assigned to delivery guy {onboarding_id}")
+        
+        if not assigned_items:
+            # Let's also check if there are any items in the order at all
+            all_items = OrderItem.query.filter_by(order_id=order_id).all()
+            print(f"🔍 [REJECT ORDER] Total items in order: {len(all_items)}")
+            for item in all_items:
+                print(f"   - Item {item.id}: delivery_guy_id={getattr(item, 'delivery_guy_id', None)}, status={getattr(item, 'status', 'unknown')}")
+            
+            return {"success": False, "message": "No items assigned to you in this order"}
         
         # Check if order can be rejected
         if order.status in ["delivered", "cancelled"]:
             return {"success": False, "message": f"Cannot reject order with status: {order.status}"}
         
-        # Update order status to rejected
-        order.status = "rejected"
+        # Update assigned items status to rejected
+        for item in assigned_items:
+            item.status = "rejected"
+            item.updated_at = datetime.utcnow()
+        
+        # Update order status to rejected (if all items are rejected)
+        all_items = OrderItem.query.filter_by(order_id=order_id).all()
+        if all(item.status == "rejected" for item in all_items):
+            order.status = "rejected"
+        
         order.updated_at = datetime.utcnow()
         
         # Add rejection note
-        order.delivery_notes = (order.delivery_notes or "") + f"\n[REJECTED] Order rejected by delivery personnel at {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}. Reason: {rejection_reason}"
+        timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+        order.delivery_notes = (order.delivery_notes or "") + f"\n[REJECTED] Order rejected by delivery personnel at {timestamp}. Reason: {rejection_reason}"
         
         # Update delivery loyalty table
         loyalty_record = Delivery_Loyalty.query.filter_by(delivery_user_id=onboarding_id).first()
@@ -260,9 +450,18 @@ def reject_order_by_delivery_guy(onboarding_id: int, order_id: int, rejection_re
 def out_for_delivery_order_by_delivery_guy(delivery_guy_id: int, order_id: int, out_for_delivery_reason: str, is_exchange: bool = False) -> Dict[str, Any]:
     """Out for delivery an order by delivery guy with exchange status tracking"""
     try:
-        order = Order.query.filter_by(id=order_id, delivery_guy_id=delivery_guy_id).first()
+        order = Order.query.get(order_id)
         if not order:
-            return {"success": False, "message": "Order not found or not assigned to you"}
+            return {"success": False, "message": "Order not found"}
+        
+        # Check if delivery guy has any items assigned in this order
+        assigned_items = OrderItem.query.filter_by(
+            order_id=order_id, 
+            delivery_guy_id=delivery_guy_id
+        ).all()
+        
+        if not assigned_items:
+            return {"success": False, "message": "No items assigned to you in this order"}
 
         # Auto-detect if this is an exchange delivery if not explicitly specified
         if not is_exchange:
@@ -272,8 +471,16 @@ def out_for_delivery_order_by_delivery_guy(delivery_guy_id: int, order_id: int, 
             if is_exchange:
                 print(f"Auto-detected exchange delivery for order {order_id}")
 
-        # Update order status to out for delivery
-        order.status = "out_for_delivery"
+        # Update assigned items status to out for delivery
+        for item in assigned_items:
+            item.status = "out_for_delivery"
+            item.updated_at = datetime.utcnow()
+        
+        # Update order status to out for delivery (if all items are out for delivery)
+        all_items = OrderItem.query.filter_by(order_id=order_id).all()
+        if all(item.status in ["out_for_delivery", "delivered"] for item in all_items):
+            order.status = "out_for_delivery"
+        
         order.updated_at = datetime.utcnow()
         
         # Set exchange delivery flag
@@ -319,15 +526,32 @@ def out_for_delivery_order_by_delivery_guy(delivery_guy_id: int, order_id: int, 
 def delivered_order_by_delivery_guy(delivery_guy_id: int, order_id: int, delivered_reason: str) -> Dict[str, Any]:
     """Delivered an order by delivery guy with exchange status tracking"""
     try:
-        order = Order.query.filter_by(id=order_id, delivery_guy_id=delivery_guy_id).first()
+        order = Order.query.get(order_id)
         if not order:
-            return {"success": False, "message": "Order not found or not assigned to you"}
+            return {"success": False, "message": "Order not found"}
+        
+        # Check if delivery guy has any items assigned in this order
+        assigned_items = OrderItem.query.filter_by(
+            order_id=order_id, 
+            delivery_guy_id=delivery_guy_id
+        ).all()
+        
+        if not assigned_items:
+            return {"success": False, "message": "No items assigned to you in this order"}
 
         # Check if this was an exchange delivery
         is_exchange = getattr(order, 'is_exchange_delivery', False)
         
-        # Update order status to delivered
-        order.status = "delivered"
+        # Update assigned items status to delivered
+        for item in assigned_items:
+            item.status = "delivered"
+            item.updated_at = datetime.utcnow()
+        
+        # Update order status to delivered (if all items are delivered)
+        all_items = OrderItem.query.filter_by(order_id=order_id).all()
+        if all(item.status == "delivered" for item in all_items):
+            order.status = "delivered"
+        
         order.updated_at = datetime.utcnow()
         
         # Add delivered note with delivery type

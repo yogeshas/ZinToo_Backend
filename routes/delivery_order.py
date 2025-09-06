@@ -53,8 +53,17 @@ def list_orders():
     delivery_guy_id = request.delivery_guy_id
     status = request.args.get("status")  # approved|assigned|cancelled|delivered
     print(f"Statusssssss: {status}")
+    
+    # NEW LOGIC: Show orders based on order-item status and delivery_track
+    print(f"Delivery guy ID: {delivery_guy_id}")
+    print(f"Status filter: {status}")
+    
+    # Get orders with new logic that groups by status and delivery_track
     orders = get_orders_for_delivery_guy(delivery_guy_id, status)
+    
+    print(f"Found {len(orders)} orders for delivery guy {delivery_guy_id}")
     serialized = serialize_orders_with_customer(orders)
+    print(f"Serialized: {serialized}")
     # Return normal JSON instead of encrypted data
     return jsonify({"success": True, "orders": serialized}), 200
 
@@ -134,21 +143,27 @@ def reject_order(order_id: int):
     """Reject an order by delivery guy"""
     try:
         delivery_guy_id = request.delivery_guy_id
+        print(f"🚀 [REJECT ROUTE] Delivery guy {delivery_guy_id} rejecting order {order_id}")
         
         # Get rejection reason from request
         data = request.get_json()
         rejection_reason = data.get("rejection_reason", "Order rejected by delivery personnel") if data else "Order rejected by delivery personnel"
         
+        print(f"📝 [REJECT ROUTE] Rejection reason: {rejection_reason}")
+        
         result = reject_order_by_delivery_guy(delivery_guy_id, order_id, rejection_reason)
+        
+        print(f"📊 [REJECT ROUTE] Result: {result}")
         
         if result["success"]:
             # Return normal JSON instead of encrypted data
             return jsonify({"success": True, "message": result["message"], "order": result["order"]}), 200
         else:
+            print(f"❌ [REJECT ROUTE] Rejection failed: {result['message']}")
             return jsonify({"error": result["message"]}), 400
             
     except Exception as e:
-        print(f"Reject order error: {str(e)}")
+        print(f"💥 [REJECT ROUTE] Exception: {str(e)}")
         return jsonify({"error": "Internal server error"}), 500
 
 

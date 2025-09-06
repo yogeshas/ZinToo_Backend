@@ -532,7 +532,7 @@ def get_order_status_summary(order_id: int):
         return {"error": f"Failed to get order status summary: {str(e)}"}, 500
 
 def cancel_order(order_id: int, customer_id: int = None):
-    """Cancel an order or initiate return if within window"""
+    """Cancel an order by updating all order items to cancel_requested status"""
     try:
         query = Order.query.filter_by(id=order_id)
         if customer_id:
@@ -542,7 +542,16 @@ def cancel_order(order_id: int, customer_id: int = None):
         if not order:
             return {"error": "Order not found"}, 404
         
-        # If delivered, allow return within 24 hours; else block cancellation for shipped
+        print(f"[CANCEL ORDER] Processing bulk cancellation for order {order_id}")
+        
+        # Get all order items for this order
+        order_items = OrderItem.query.filter_by(order_id=order_id).all()
+        print(f"[CANCEL ORDER] Found {len(order_items)} items in order {order_id}")
+        
+        if not order_items:
+            return {"error": "No items found in order"}, 400
+        
+        # Check if order is already shipped/delivered
         if order.status in ["shipped", "delivered"]:
             if order.status == "delivered" or order.status == "shipped":
                 try:
@@ -551,6 +560,13 @@ def cancel_order(order_id: int, customer_id: int = None):
                         return {"error": "Return window expired"}, 400
                 except Exception:
                     return {"error": "Return window expired"}, 400
+                # For delivered orders, update items to return_requested
+                for item in order_items:
+                    if item.status not in ["return_requested", "returned", "refunded"]:
+                        item.status = "cancelled"
+                        item.updated_at = datetime.utcnow()
+                        print(f"[CANCEL ORDER] Updated item {item.id} to return_requested")
+                
                 # Track return flow in delivery_notes
                 try:
                     notes = json.loads(order.delivery_notes) if order.delivery_notes else {}
@@ -559,38 +575,51 @@ def cancel_order(order_id: int, customer_id: int = None):
                 flow = notes.get("return_flow", [])
                 flow.append({"status": "return_requested", "at": datetime.utcnow().isoformat()})
                 notes["return_flow"] = flow
-                # Reflect return in main status for frontend/admin visibility
-                order.status = "return_requested"
                 order.delivery_notes = json.dumps(notes)
                 order.updated_at = datetime.utcnow()
+                
                 db.session.commit()
-                return {"success": True, "message": "Return request initiated"}, 200
+                return {"success": True, "message": "Return request initiated for all items"}, 200
             return {"error": "Cannot cancel shipped order"}, 400
         
-        # Regular cancellation flow for pre-shipment orders
+        # Regular cancellation flow - update all order items to cancel_requested
+        updated_items = 0
+        skipped_items = 0
+        
+        for item in order_items:
+            # Check if item already has cancellation-related status
+            if item.status in ["cancel_requested", "cancel_initiated", "canceled_confirmed", "refund_initiated", "refunded"]:
+                print(f"[CANCEL ORDER] Item {item.id} already has cancellation status: {item.status}, skipping")
+                skipped_items += 1
+                continue
+            
+            # Update item status to cancel_requested
+            item.status = "cancelled"
+            item.cancel_requested_at = datetime.utcnow()
+            item.cancel_reason = "Bulk order cancellation"
+            item.updated_at = datetime.utcnow()
+            updated_items += 1
+            print(f"[CANCEL ORDER] Updated item {item.id} to cancelled")
+        
+        # Track cancellation flow in delivery_notes
         try:
             notes = json.loads(order.delivery_notes) if order.delivery_notes else {}
         except Exception:
             notes = {}
         flow = notes.get("cancel_flow", [])
         flow.append({"status": "cancel_request_initiated", "at": datetime.utcnow().isoformat()})
-        # Reflect cancel requested in main status for visibility
-        order.status = "cancel_requested"
-        order.updated_at = datetime.utcnow()
-        
-        # Handle refunds
-        if order.payment_status == "completed" and order.payment_method in ["wallet", "razorpay"]:
-            flow.append({"status": "refund_initiated", "at": datetime.utcnow().isoformat()})
-            if order.payment_method == "wallet":
-                order.payment_status = "refunded"
-                flow.append({"status": "refunded", "at": datetime.utcnow().isoformat()})
-            else:
-                order.payment_status = "refund_initiated"
         notes["cancel_flow"] = flow
         order.delivery_notes = json.dumps(notes)
+        order.updated_at = datetime.utcnow()
         
         db.session.commit()
-        return {"success": True, "message": "Order cancelled successfully"}, 200
+        
+        message = f"Bulk cancellation completed: {updated_items} items updated to cancel_requested"
+        if skipped_items > 0:
+            message += f", {skipped_items} items already had cancellation status"
+        
+        print(f"[CANCEL ORDER] {message}")
+        return {"success": True, "message": message, "updated_items": updated_items, "skipped_items": skipped_items}, 200
         
     except Exception as e:
         print(f"❌ Cancel order error: {str(e)}")

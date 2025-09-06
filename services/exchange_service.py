@@ -1,202 +1,170 @@
 from models.exchange import Exchange
-from models.order import Order, OrderItem
+from models.delivery_onboarding import DeliveryOnboarding
+from models.order import Order
 from models.product import Product
 from extensions import db
 from datetime import datetime
-from sqlalchemy import and_
 
-def create_exchange(customer_id, order_id, order_item_id, product_id, new_size, new_quantity=1, reason=None):
-    """Create a new exchange request with size and quantity support"""
+def get_exchanges_for_delivery_guy(delivery_guy_id):
+    """Get all exchanges assigned to a delivery guy"""
     try:
-        print(f"[EXCHANGE SERVICE] Creating exchange: customer_id={customer_id}, order_id={order_id}, order_item_id={order_item_id}, product_id={product_id}, new_size={new_size}, new_quantity={new_quantity}")
+        exchanges = Exchange.query.filter_by(delivery_guy_id=delivery_guy_id).all()
         
-        # Check if order exists and belongs to customer
+        result = []
+        for exchange in exchanges:
+            exchange_data = exchange.to_dict()
+            # Add customer information if available
+            if exchange.order and exchange.order.customer:
+                exchange_data['customer'] = {
+                    'id': exchange.order.customer.id,
+                    'name': exchange.order.customer.username,
+                    'email': exchange.order.customer.email,
+                    'phone': exchange.order.customer.get_phone_number()
+                }
+            result.append(exchange_data)
+        
+        return result
+    except Exception as e:
+        print(f"Error getting exchanges for delivery guy: {str(e)}")
+        return []
+
+def get_exchange_detail_for_delivery_guy(delivery_guy_id, exchange_id):
+    """Get detailed exchange information for delivery guy"""
+    try:
+        exchange = Exchange.query.filter_by(
+            id=exchange_id, 
+            delivery_guy_id=delivery_guy_id
+        ).first()
+        
+        if not exchange:
+            return None
+        
+        exchange_data = exchange.to_dict()
+        
+        # Add detailed information
+        if exchange.order and exchange.order.customer:
+            exchange_data['customer'] = {
+                'id': exchange.order.customer.id,
+                'name': exchange.order.customer.username,
+                'email': exchange.order.customer.email,
+                'phone': exchange.order.customer.get_phone_number(),
+                'address': exchange.order.customer.get_location()
+            }
+        
+        # Add product information
+        if exchange.original_product:
+            exchange_data['original_product'] = {
+                'id': exchange.original_product.id,
+                'name': exchange.original_product.pname,
+                'barcode': exchange.original_product.barcode,
+                'price': exchange.original_product.price
+            }
+        
+        if exchange.exchange_product:
+            exchange_data['exchange_product'] = {
+                'id': exchange.exchange_product.id,
+                'name': exchange.exchange_product.pname,
+                'barcode': exchange.exchange_product.barcode,
+                'price': exchange.exchange_product.price
+            }
+        
+        return exchange_data
+        
+    except Exception as e:
+        print(f"Error getting exchange detail: {str(e)}")
+        return None
+
+def create_exchange(customer_id, order_id, original_product_id, exchange_product_id, reason, quantity=1):
+    """Create a new exchange request"""
+    try:
+        # Validate that the order belongs to the customer
         order = Order.query.filter_by(id=order_id, customer_id=customer_id).first()
         if not order:
-            print(f"[EXCHANGE SERVICE] Order {order_id} not found for customer {customer_id}")
-            return {"error": "Order not found"}, 404
+            return {"error": "Order not found or access denied"}, 404
         
-        # Check if order item exists
-        order_item = OrderItem.query.filter_by(id=order_item_id, order_id=order_id).first()
-        if not order_item:
-            print(f"[EXCHANGE SERVICE] Order item {order_item_id} not found for order {order_id}")
-            return {"error": "Order item not found"}, 404
+        # Validate products exist
+        original_product = Product.query.get(original_product_id)
+        exchange_product = Product.query.get(exchange_product_id)
         
-        # Check if product exists
-        product = Product.query.get(product_id)
-        if not product:
-            print(f"[EXCHANGE SERVICE] Product {product_id} not found")
-            return {"error": "Product not found"}, 404
-        
-        # Check if new size is available
-        print(f"[EXCHANGE SERVICE] Checking size availability for product {product_id}")
-        print(f"[EXCHANGE SERVICE] Product sizes: {product.get_sizes_dict()}")
-        print(f"[EXCHANGE SERVICE] Requested size: {new_size}")
-        print(f"[EXCHANGE SERVICE] Available sizes: {product.get_available_sizes()}")
-        
-        if not product.is_size_available(new_size):
-            print(f"[EXCHANGE SERVICE] Size {new_size} not available")
-            return {"error": f"Size {new_size} is not available"}, 400
-        
-        # Check if requested quantity is available
-        available_quantity = product.get_size_stock(new_size)
-        print(f"[EXCHANGE SERVICE] Available quantity for size {new_size}: {available_quantity}")
-        print(f"[EXCHANGE SERVICE] Requested quantity: {new_quantity}")
-        
-        if available_quantity < new_quantity:
-            print(f"[EXCHANGE SERVICE] Insufficient quantity for size {new_size}")
-            return {"error": f"Only {available_quantity} available in size {new_size}"}, 400
-        
-        # Calculate additional payment if quantity increased
-        old_quantity = order_item.quantity
-        additional_payment_required = False
-        additional_amount = 0.0
-        
-        if new_quantity > old_quantity:
-            additional_payment_required = True
-            additional_amount = (new_quantity - old_quantity) * order_item.unit_price
-            print(f"[EXCHANGE SERVICE] Additional payment required: ₹{additional_amount}")
-        
-        # Check if exchange already exists for this order item
-        existing_exchange = (
-            Exchange.query
-            .filter(
-                Exchange.order_item_id == order_item_id,
-                Exchange.status.in_(["initiated", "approved", "out_for_delivery"])  # pending active flows
-            )
-            .first()
-        )
-        
-        if existing_exchange:
-            return {"error": "Exchange request already exists for this item"}, 400
+        if not original_product or not exchange_product:
+            return {"error": "One or more products not found"}, 404
         
         # Create exchange
-        print(f"[EXCHANGE SERVICE] Creating exchange object...")
         exchange = Exchange(
-            order_id=order_id,
-            order_item_id=order_item_id,
             customer_id=customer_id,
-            product_id=product_id,
-            old_size=order_item.selected_size or 'N/A',
-            new_size=new_size,
-            old_quantity=old_quantity,
-            new_quantity=new_quantity,
+            order_id=order_id,
+            original_product_id=original_product_id,
+            exchange_product_id=exchange_product_id,
             reason=reason,
-            additional_payment_required=additional_payment_required,
-            additional_amount=additional_amount,
-            status="initiated"
+            quantity=quantity,
+            status="pending",
+            created_at=datetime.now()
         )
-        
-        print(f"[EXCHANGE SERVICE] Exchange object created: {exchange}")
         
         db.session.add(exchange)
         db.session.commit()
         
-        print(f"[EXCHANGE SERVICE] Exchange saved to database with ID: {exchange.id}")
-        
         return {
-            "success": True, 
-            "message": "Exchange request created successfully", 
-            "exchange_id": exchange.id,
-            "additional_payment_required": additional_payment_required,
-            "additional_amount": additional_amount
+            "success": True,
+            "message": "Exchange request created successfully",
+            "exchange": exchange.to_dict()
         }, 201
         
     except Exception as e:
         db.session.rollback()
-        print(f"Create exchange error: {str(e)}")
+        print(f"Error creating exchange: {str(e)}")
         return {"error": "Failed to create exchange request"}, 500
 
 def get_customer_exchanges(customer_id, limit=20):
-    """Get all exchanges for a customer"""
+    """Get all exchanges for a specific customer"""
     try:
         exchanges = Exchange.query.filter_by(customer_id=customer_id)\
             .order_by(Exchange.created_at.desc())\
-            .limit(limit)\
-            .all()
+            .limit(limit).all()
         
-        exchanges_data = []
+        result = []
         for exchange in exchanges:
-            exchange_dict = exchange.as_dict()
-            
-            # Add order information
-            if exchange.order:
-                exchange_dict["order"] = exchange.order.as_dict()
-            
-            # Add customer information (try direct relationship first, then through order)
-            customer_data = None
-            if exchange.customer:
-                customer_data = exchange.customer.as_dict()
-            elif exchange.order and exchange.order.customer:
-                customer_data = exchange.order.customer.as_dict()
-            
-            if customer_data:
-                # Add name field for frontend compatibility
-                customer_data["name"] = customer_data.get("username", "Unknown")
-                exchange_dict["customer"] = customer_data
-            
-            # Add product information
-            if exchange.product:
-                product_data = exchange.product.to_dict()
-                # Add name field for frontend compatibility
-                product_data["name"] = product_data.get("pname", "Unknown")
-                exchange_dict["product"] = product_data
-            
-            exchanges_data.append(exchange_dict)
+            exchange_data = exchange.to_dict()
+            result.append(exchange_data)
         
-        return {"success": True, "exchanges": exchanges_data}, 200
+        return {
+            "success": True,
+            "exchanges": result,
+            "total": len(result)
+        }, 200
         
     except Exception as e:
-        print(f"Get customer exchanges error: {str(e)}")
-        return {"error": "Failed to fetch exchanges"}, 500
+        print(f"Error getting customer exchanges: {str(e)}")
+        return {"error": "Failed to get exchanges"}, 500
 
 def get_all_exchanges(limit=50):
-    """Get all exchanges for admin panel"""
+    """Get all exchanges for admin"""
     try:
-        exchanges = Exchange.query.order_by(Exchange.created_at.desc()).limit(limit).all()
+        exchanges = Exchange.query.order_by(Exchange.created_at.desc())\
+            .limit(limit).all()
         
-        exchanges_data = []
+        result = []
         for exchange in exchanges:
-            exchange_dict = exchange.as_dict()
-            
-            # Add order information
-            if exchange.order:
-                exchange_dict["order"] = exchange.order.as_dict()
-            
-            # Add customer information (try direct relationship first, then through order)
-            customer_data = None
+            exchange_data = exchange.to_dict()
+            # Add customer information
             if exchange.customer:
-                customer_data = exchange.customer.as_dict()
-            elif exchange.order and exchange.order.customer:
-                customer_data = exchange.order.customer.as_dict()
-            
-            if customer_data:
-                # Add name field for frontend compatibility
-                customer_data["name"] = customer_data.get("username", "Unknown")
-                exchange_dict["customer"] = customer_data
-            
-            # Add product information
-            if exchange.product:
-                product_data = exchange.product.to_dict()
-                # Add name field for frontend compatibility
-                product_data["name"] = product_data.get("pname", "Unknown")
-                exchange_dict["product"] = product_data
-            
-            # Add admin info
-            if exchange.admin:
-                exchange_dict["admin"] = exchange.admin.as_dict()
-            
-            # Add delivery guy info
-            if exchange.delivery_guy:
-                exchange_dict["delivery_guy"] = exchange.delivery_guy.as_dict()
-            
-            exchanges_data.append(exchange_dict)
+                exchange_data['customer'] = {
+                    'id': exchange.customer.id,
+                    'name': exchange.customer.username,
+                    'email': exchange.customer.email,
+                    'phone': exchange.customer.get_phone_number()
+                }
+            result.append(exchange_data)
         
-        return {"success": True, "exchanges": exchanges_data}, 200
+        return {
+            "success": True,
+            "exchanges": result,
+            "total": len(result)
+        }, 200
         
     except Exception as e:
-        print(f"Get all exchanges error: {str(e)}")
-        return {"error": "Failed to fetch exchanges"}, 500
+        print(f"Error getting all exchanges: {str(e)}")
+        return {"error": "Failed to get exchanges"}, 500
 
 def get_exchange_by_id(exchange_id):
     """Get exchange by ID"""
@@ -205,84 +173,68 @@ def get_exchange_by_id(exchange_id):
         if not exchange:
             return {"error": "Exchange not found"}, 404
         
-        exchange_dict = exchange.as_dict()
+        exchange_data = exchange.to_dict()
         
-        # Add related information
-        if exchange.order:
-            exchange_dict["order"] = exchange.order.as_dict()
-        
-        # Add customer information (try direct relationship first, then through order)
-        customer_data = None
+        # Add customer information
         if exchange.customer:
-            customer_data = exchange.customer.as_dict()
-        elif exchange.order and exchange.order.customer:
-            customer_data = exchange.order.customer.as_dict()
+            exchange_data['customer'] = {
+                'id': exchange.customer.id,
+                'name': exchange.customer.username,
+                'email': exchange.customer.email,
+                'phone': exchange.customer.get_phone_number()
+            }
         
-        if customer_data:
-            # Add name field for frontend compatibility
-            customer_data["name"] = customer_data.get("username", "Unknown")
-            exchange_dict["customer"] = customer_data
+        # Add product information
+        if exchange.original_product:
+            exchange_data['original_product'] = {
+                'id': exchange.original_product.id,
+                'name': exchange.original_product.pname,
+                'barcode': exchange.original_product.barcode,
+                'price': exchange.original_product.price
+            }
         
-        if exchange.product:
-            product_data = exchange.product.to_dict()
-            # Add name field for frontend compatibility
-            product_data["name"] = product_data.get("pname", "Unknown")
-            exchange_dict["product"] = product_data
+        if exchange.exchange_product:
+            exchange_data['exchange_product'] = {
+                'id': exchange.exchange_product.id,
+                'name': exchange.exchange_product.pname,
+                'barcode': exchange.exchange_product.barcode,
+                'price': exchange.exchange_product.price
+            }
         
-        if exchange.admin:
-            exchange_dict["admin"] = exchange.admin.as_dict()
-        
-        if exchange.delivery_guy:
-            exchange_dict["delivery_guy"] = exchange.delivery_guy.as_dict()
-        
-        return {"success": True, "exchange": exchange_dict}, 200
+        return {
+            "success": True,
+            "exchange": exchange_data
+        }, 200
         
     except Exception as e:
-        print(f"Get exchange by ID error: {str(e)}")
-        return {"error": "Failed to fetch exchange"}, 500
+        print(f"Error getting exchange by ID: {str(e)}")
+        return {"error": "Failed to get exchange"}, 500
 
 def approve_exchange(exchange_id, admin_id, admin_notes=None):
-    """Approve an exchange request with size-based inventory management"""
+    """Approve an exchange request"""
     try:
         exchange = Exchange.query.get(exchange_id)
         if not exchange:
             return {"error": "Exchange not found"}, 404
         
-        success, message = exchange.approve(admin_id)
-        if not success:
-            return {"error": message}, 400
+        if exchange.status != "pending":
+            return {"error": "Exchange is not in pending status"}, 400
         
-        # Update admin notes if provided
-        if admin_notes:
-            exchange.admin_notes = admin_notes
-
-        # Handle inventory changes on approval
-        product = Product.query.get(exchange.product_id)
-        if product:
-            try:
-                # Reserve new size inventory
-                success, msg = product.reserve_size(exchange.new_size, exchange.new_quantity)
-                if not success:
-                    return {"error": msg}, 400
-                
-                # Add old size back to inventory (if it was a valid size)
-                if exchange.old_size and exchange.old_size != 'N/A':
-                    product.add_size_stock(exchange.old_size, exchange.old_quantity)
-                
-                print(f"[EXCHANGE SERVICE] Inventory updated: {msg}")
-                
-            except Exception as e:
-                db.session.rollback()
-                print(f"[EXCHANGE SERVICE] Inventory update failed: {e}")
-                return {"error": "Failed to update inventory on approval"}, 500
-
+        exchange.status = "approved"
+        exchange.admin_notes = admin_notes
+        exchange.updated_at = datetime.now()
+        
         db.session.commit()
         
-        return {"success": True, "message": message}, 200
+        return {
+            "success": True,
+            "message": "Exchange approved successfully",
+            "exchange": exchange.to_dict()
+        }, 200
         
     except Exception as e:
         db.session.rollback()
-        print(f"Approve exchange error: {str(e)}")
+        print(f"Error approving exchange: {str(e)}")
         return {"error": "Failed to approve exchange"}, 500
 
 def reject_exchange(exchange_id, admin_id, reason):
@@ -292,57 +244,83 @@ def reject_exchange(exchange_id, admin_id, reason):
         if not exchange:
             return {"error": "Exchange not found"}, 404
         
-        success, message = exchange.reject(admin_id, reason)
-        if not success:
-            return {"error": message}, 400
+        if exchange.status != "pending":
+            return {"error": "Exchange is not in pending status"}, 400
+        
+        exchange.status = "rejected"
+        exchange.rejection_reason = reason
+        exchange.updated_at = datetime.now()
         
         db.session.commit()
         
-        return {"success": True, "message": message}, 200
+        return {
+            "success": True,
+            "message": "Exchange rejected successfully",
+            "exchange": exchange.to_dict()
+        }, 200
         
     except Exception as e:
         db.session.rollback()
-        print(f"Reject exchange error: {str(e)}")
+        print(f"Error rejecting exchange: {str(e)}")
         return {"error": "Failed to reject exchange"}, 500
 
 def assign_delivery(exchange_id, delivery_guy_id):
-    """Assign delivery guy for exchange (admin action)"""
+    """Assign delivery guy to exchange"""
     try:
         exchange = Exchange.query.get(exchange_id)
         if not exchange:
             return {"error": "Exchange not found"}, 404
         
-        success, message = exchange.assign_delivery(delivery_guy_id)
-        if not success:
-            return {"error": message}, 400
+        # Verify delivery guy exists and is approved
+        delivery_guy = DeliveryOnboarding.query.filter_by(
+            id=delivery_guy_id, 
+            status="approved"
+        ).first()
+        
+        if not delivery_guy:
+            return {"error": "Delivery guy not found or not approved"}, 404
+        
+        exchange.delivery_guy_id = delivery_guy_id
+        exchange.status = "assigned"
+        exchange.updated_at = datetime.now()
         
         db.session.commit()
         
-        return {"success": True, "message": message}, 200
+        return {
+            "success": True,
+            "message": "Delivery guy assigned successfully",
+            "exchange": exchange.to_dict()
+        }, 200
         
     except Exception as e:
         db.session.rollback()
-        print(f"Assign delivery error: {str(e)}")
+        print(f"Error assigning delivery: {str(e)}")
         return {"error": "Failed to assign delivery"}, 500
 
 def start_delivery(exchange_id):
-    """Start delivery (delivery team action)"""
+    """Start delivery for exchange"""
     try:
         exchange = Exchange.query.get(exchange_id)
         if not exchange:
             return {"error": "Exchange not found"}, 404
         
-        success, message = exchange.start_delivery()
-        if not success:
-            return {"error": message}, 400
+        if exchange.status != "assigned":
+            return {"error": "Exchange is not assigned to delivery"}, 400
+        
+        exchange.status = "out_for_delivery"
+        exchange.updated_at = datetime.now()
         
         db.session.commit()
         
-        return {"success": True, "message": message}, 200
+        return {
+            "success": True,
+            "message": "Delivery started successfully",
+            "exchange": exchange.to_dict()
+        }, 200
         
     except Exception as e:
         db.session.rollback()
-        print(f"Start delivery error: {str(e)}")
+        print(f"Error starting delivery: {str(e)}")
         return {"error": "Failed to start delivery"}, 500
 
 def mark_exchange_delivered(exchange_id):
@@ -352,60 +330,53 @@ def mark_exchange_delivered(exchange_id):
         if not exchange:
             return {"error": "Exchange not found"}, 404
         
-        success, message = exchange.mark_delivered()
-        if not success:
-            return {"error": message}, 400
+        if exchange.status not in ["assigned", "out_for_delivery"]:
+            return {"error": "Exchange is not ready for delivery"}, 400
         
-        # When delivered, the inventory changes are already handled at approval time
-        # No additional inventory changes needed here
+        exchange.status = "delivered"
+        exchange.delivered_at = datetime.now()
+        exchange.updated_at = datetime.now()
         
         db.session.commit()
         
-        return {"success": True, "message": message}, 200
+        return {
+            "success": True,
+            "message": "Exchange marked as delivered successfully",
+            "exchange": exchange.to_dict()
+        }, 200
         
     except Exception as e:
         db.session.rollback()
-        print(f"Mark delivered error: {str(e)}")
-        return {"error": "Failed to mark as delivered"}, 500
+        print(f"Error marking exchange as delivered: {str(e)}")
+        return {"error": "Failed to mark exchange as delivered"}, 500
 
 def get_exchanges_by_status(status, limit=50):
     """Get exchanges by status"""
     try:
         exchanges = Exchange.query.filter_by(status=status)\
             .order_by(Exchange.created_at.desc())\
-            .limit(limit)\
-            .all()
+            .limit(limit).all()
         
-        exchanges_data = []
+        result = []
         for exchange in exchanges:
-            exchange_dict = exchange.as_dict()
-            
-            # Add basic related info
-            if exchange.order:
-                exchange_dict["order"] = exchange.order.as_dict()
-            
-            # Add customer information (try direct relationship first, then through order)
-            customer_data = None
+            exchange_data = exchange.to_dict()
+            # Add customer information
             if exchange.customer:
-                customer_data = exchange.customer.as_dict()
-            elif exchange.order and exchange.order.customer:
-                customer_data = exchange.order.customer.as_dict()
-            
-            if customer_data:
-                # Add name field for frontend compatibility
-                customer_data["name"] = customer_data.get("username", "Unknown")
-                exchange_dict["customer"] = customer_data
-            
-            if exchange.product:
-                product_data = exchange.product.to_dict()
-                # Add name field for frontend compatibility
-                product_data["name"] = product_data.get("pname", "Unknown")
-                exchange_dict["product"] = product_data
-            
-            exchanges_data.append(exchange_dict)
+                exchange_data['customer'] = {
+                    'id': exchange.customer.id,
+                    'name': exchange.customer.username,
+                    'email': exchange.customer.email,
+                    'phone': exchange.customer.get_phone_number()
+                }
+            result.append(exchange_data)
         
-        return {"success": True, "exchanges": exchanges_data}, 200
+        return {
+            "success": True,
+            "exchanges": result,
+            "total": len(result),
+            "status": status
+        }, 200
         
     except Exception as e:
-        print(f"Get exchanges by status error: {str(e)}")
-        return {"error": "Failed to fetch exchanges"}, 500
+        print(f"Error getting exchanges by status: {str(e)}")
+        return {"error": "Failed to get exchanges"}, 500

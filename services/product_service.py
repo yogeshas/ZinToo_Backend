@@ -1,6 +1,7 @@
 from models.product import Product
 from extensions import db
 from utils.crypto import encrypt_payload, decrypt_payload
+from utils.barcode_generator import generate_unique_barcode, regenerate_barcode
 import json
 def get_all_products():
     return Product.query.order_by(Product.id.desc()).all()
@@ -51,6 +52,12 @@ def create_product(data):
             except Exception:
                 auto_stock = None
 
+        # Generate unique barcode for new product
+        try:
+            barcode = generate_unique_barcode()
+        except Exception as barcode_error:
+            raise ValueError(f"Failed to generate barcode: {str(barcode_error)}")
+        
         product = Product(
             pname=data.get("pname"),
             pdescription=data.get("pdescription"),
@@ -74,6 +81,7 @@ def create_product(data):
             is_new=data.get("is_new", False),
             discount_value=float(data.get("discount_value", 0)),
             shared_count=int(data.get("shared_count", 0)),
+            barcode=barcode,
             
             image=image_field,
             tag=data.get("tag"),
@@ -118,6 +126,7 @@ def update_product(pid, data):
         "shared_count",
         "coupon_id",
         "discount_value",
+        "barcode",
     }
     # If sizes map provided, normalize and auto-calc stock/quantity
     if "size" in data and isinstance(data["size"], dict):
@@ -147,3 +156,15 @@ def delete_product(pid):
     db.session.delete(product)
     db.session.commit()
     return True
+
+def regenerate_product_barcode(pid):
+    """
+    Regenerate barcode for an existing product
+    """
+    try:
+        new_barcode = regenerate_barcode(pid)
+        return {"success": True, "barcode": new_barcode}
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
+    except Exception as e:
+        return {"success": False, "error": f"Failed to regenerate barcode: {str(e)}"}

@@ -12,7 +12,9 @@ from services.order_item_service import (
     cancel_individual_product,
     request_refund_for_product,
     admin_process_refund,
-    get_product_status_summary
+    get_product_status_summary,
+    assign_delivery_guy_to_order_item,
+    get_available_delivery_guys
 )
 import jwt
 from config import Config
@@ -345,7 +347,7 @@ def get_cancelled_products_admin(current_admin):
         from sqlalchemy import or_
         
         # Get all cancelled products with order information
-        cancelled_products = OrderItem.query.filter(or_(OrderItem.status == "cancelled" , OrderItem.status == "completed" , OrderItem.status == "initiated")).all()
+        cancelled_products = OrderItem.query.filter(or_(OrderItem.status == "cancelled" , OrderItem.status == "completed" , OrderItem.status == "initiated",OrderItem.status == "assigned")).all()
         
         products_data = []
         for product in cancelled_products:
@@ -393,4 +395,80 @@ def get_cancelled_products_admin(current_admin):
         
     except Exception as e:
         print(f"Error getting cancelled products (admin): {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@order_items_bp.route("/items/<int:item_id>/assign-delivery", methods=["POST"])
+@require_admin_auth
+def assign_delivery_to_order_item(current_admin, item_id: int):
+    """Admin assigns delivery guy to individual order item"""
+    try:
+        admin_id = current_admin["id"]
+        
+        # Get request data (encrypted payload)
+        data = request.get_json() or {}
+        payload = data.get("payload")
+        
+        if not payload:
+            return jsonify({"error": "Missing encrypted payload"}), 400
+        
+        # Decrypt the payload
+        try:
+            from utils.crypto import decrypt_payload
+            decrypted_data = decrypt_payload(payload)
+        except Exception as e:
+            print(f"Error decrypting payload: {e}")
+            return jsonify({"error": "Invalid encrypted payload"}), 401
+        
+        delivery_guy_id = decrypted_data.get("delivery_guy_id")
+        notes = decrypted_data.get("notes", "")
+        
+        if not delivery_guy_id:
+            return jsonify({"error": "Delivery guy ID is required"}), 400
+        
+        # Assign delivery guy to order item
+        result = assign_delivery_guy_to_order_item(
+            item_id=item_id,
+            delivery_guy_id=delivery_guy_id,
+            admin_id=admin_id,
+            notes=notes
+        )
+        
+        if result["success"]:
+            # Encrypt the response
+            encrypted_data = encrypt_payload(result)
+            return jsonify({
+                "success": True,
+                "encrypted_data": encrypted_data
+            }), 200
+        else:
+            return jsonify({"error": result["message"]}), 400
+        
+    except Exception as e:
+        print(f"Error assigning delivery to order item: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@order_items_bp.route("/delivery-guys/available", methods=["GET"])
+@require_admin_auth
+def get_available_delivery_guys_for_items(current_admin):
+    """Get available delivery guys for order item assignment"""
+    try:
+        admin_id = current_admin["id"]
+        
+        # Get available delivery guys
+        result = get_available_delivery_guys()
+        
+        if result["success"]:
+            # Encrypt the response
+            encrypted_data = encrypt_payload(result)
+            return jsonify({
+                "success": True,
+                "encrypted_data": encrypted_data
+            }), 200
+        else:
+            return jsonify({"error": result["message"]}), 400
+        
+    except Exception as e:
+        print(f"Error getting available delivery guys: {e}")
         return jsonify({"error": "Internal server error"}), 500

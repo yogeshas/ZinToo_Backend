@@ -19,6 +19,12 @@ class Order {
   final String? deliveryNotes;
   final Customer? customer;
   final List<OrderItem> items;
+  
+  // New fields for delivery tracking
+  final String? deliveryTrack;
+  final String? overallStatus;
+  final String? deliveryTrackDisplay;
+  final List<OrderItem> assignedItems;
 
   Order({
     required this.id,
@@ -41,6 +47,10 @@ class Order {
     this.deliveryNotes,
     this.customer,
     required this.items,
+    this.deliveryTrack,
+    this.overallStatus,
+    this.deliveryTrackDisplay,
+    this.assignedItems = const [],
   });
 
   factory Order.fromJson(Map<String, dynamic> json) {
@@ -65,6 +75,12 @@ class Order {
       deliveryNotes: json['delivery_notes'],
       customer: json['customer'] != null ? Customer.fromJson(json['customer']) : null,
       items: (json['items'] as List<dynamic>? ?? [])
+          .map((item) => OrderItem.fromJson(item))
+          .toList(),
+      deliveryTrack: json['delivery_track'],
+      overallStatus: json['overall_status'],
+      deliveryTrackDisplay: json['delivery_track_display'],
+      assignedItems: (json['assigned_items'] as List<dynamic>? ?? [])
           .map((item) => OrderItem.fromJson(item))
           .toList(),
     );
@@ -92,6 +108,10 @@ class Order {
       'delivery_notes': deliveryNotes,
       'customer': customer?.toJson(),
       'items': items.map((item) => item.toJson()).toList(),
+      'delivery_track': deliveryTrack,
+      'overall_status': overallStatus,
+      'delivery_track_display': deliveryTrackDisplay,
+      'assigned_items': assignedItems.map((item) => item.toJson()).toList(),
     };
   }
 
@@ -210,6 +230,11 @@ class OrderItem {
   final int quantity;
   final double unitPrice;
   final double totalPrice;
+  final String? selectedSize;
+  final String status;
+  final String? deliveryTrack;
+  final String? deliveryTrackDisplay;
+  final int? deliveryGuyId;
 
   OrderItem({
     required this.id,
@@ -219,6 +244,11 @@ class OrderItem {
     required this.quantity,
     required this.unitPrice,
     required this.totalPrice,
+    this.selectedSize,
+    this.status = 'pending',
+    this.deliveryTrack,
+    this.deliveryTrackDisplay,
+    this.deliveryGuyId,
   });
 
   factory OrderItem.fromJson(Map<String, dynamic> json) {
@@ -230,6 +260,11 @@ class OrderItem {
       quantity: json['quantity'] ?? 0,
       unitPrice: (json['unit_price'] ?? 0.0).toDouble(),
       totalPrice: (json['total_price'] ?? 0.0).toDouble(),
+      selectedSize: json['selected_size'],
+      status: json['status'] ?? 'pending',
+      deliveryTrack: json['delivery_track'],
+      deliveryTrackDisplay: json['delivery_track_display'],
+      deliveryGuyId: json['delivery_guy_id'],
     );
   }
 
@@ -242,16 +277,27 @@ class OrderItem {
       'quantity': quantity,
       'unit_price': unitPrice,
       'total_price': totalPrice,
+      'selected_size': selectedSize,
+      'status': status,
+      'delivery_track': deliveryTrack,
+      'delivery_track_display': deliveryTrackDisplay,
+      'delivery_guy_id': deliveryGuyId,
     };
   }
 }
 
 enum OrderStatus {
   all,
-  approved,
-  rejected,
-  cancelled,
+  pending,
+  confirmed,
+  processing,
+  shipped,
+  outForDelivery,
   delivered,
+  cancelled,
+  rejected,
+  exchange,
+  cancelPickup,
 }
 
 extension OrderStatusExtension on OrderStatus {
@@ -259,14 +305,26 @@ extension OrderStatusExtension on OrderStatus {
     switch (this) {
       case OrderStatus.all:
         return 'All Orders';
-      case OrderStatus.approved:
-        return 'Approved';
-      case OrderStatus.rejected:
-        return 'Rejected';
-      case OrderStatus.cancelled:
-        return 'Cancelled';
+      case OrderStatus.pending:
+        return 'Pending';
+      case OrderStatus.confirmed:
+        return 'Confirmed';
+      case OrderStatus.processing:
+        return 'Processing';
+      case OrderStatus.shipped:
+        return 'Shipped';
+      case OrderStatus.outForDelivery:
+        return 'Out for Delivery';
       case OrderStatus.delivered:
         return 'Delivered';
+      case OrderStatus.cancelled:
+        return 'Cancelled';
+      case OrderStatus.rejected:
+        return 'Rejected';
+      case OrderStatus.exchange:
+        return 'Exchange';
+      case OrderStatus.cancelPickup:
+        return 'Cancel Pickup';
     }
   }
 
@@ -274,14 +332,26 @@ extension OrderStatusExtension on OrderStatus {
     switch (this) {
       case OrderStatus.all:
         return 'assigned';
-      case OrderStatus.approved:
-        return 'approved';
-      case OrderStatus.rejected:
-        return 'rejected';
-      case OrderStatus.cancelled:
-        return 'cancelled';
+      case OrderStatus.pending:
+        return 'pending';
+      case OrderStatus.confirmed:
+        return 'confirmed';
+      case OrderStatus.processing:
+        return 'processing';
+      case OrderStatus.shipped:
+        return 'shipped';
+      case OrderStatus.outForDelivery:
+        return 'out_for_delivery';
       case OrderStatus.delivered:
         return 'delivered';
+      case OrderStatus.cancelled:
+        return 'cancelled';
+      case OrderStatus.rejected:
+        return 'rejected';
+      case OrderStatus.exchange:
+        return 'exchange';
+      case OrderStatus.cancelPickup:
+        return 'cancel_pickup';
     }
   }
 }

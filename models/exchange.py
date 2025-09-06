@@ -76,6 +76,10 @@ class Exchange(db.Model):
             "updated_at": self.updated_at.isoformat() if self.updated_at else None
         }
 
+    def to_dict(self):
+        """Alias for as_dict for consistency with other models"""
+        return self.as_dict()
+
     def can_approve(self):
         """Check if exchange can be approved"""
         return self.status == "initiated"

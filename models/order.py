@@ -116,6 +116,9 @@ class OrderItem(db.Model):
     exchange_status = db.Column(db.String(20), default="not_applicable", nullable=False)  # not_applicable, requested, approved, out_for_delivery, delivered, rejected
     exchange_id = db.Column(db.Integer, db.ForeignKey("exchange.id"), nullable=True)
     
+    # Delivery assignment
+    delivery_guy_id = db.Column(db.Integer, db.ForeignKey("delivery_onboarding.id"), nullable=True)
+    
     created_at = db.Column(db.DateTime, default=get_current_time)
     updated_at = db.Column(db.DateTime, default=get_current_time, onupdate=get_current_time)
 
@@ -149,6 +152,35 @@ class OrderItem(db.Model):
             "refunded_at": self.refunded_at.isoformat() if self.refunded_at else None,
             "exchange_status": self.exchange_status,
             "exchange_id": self.exchange_id,
+            "delivery_guy_id": self.delivery_guy_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None
+        }
+
+class OrderHistory(db.Model):
+    __tablename__ = "order_history"
+    id = db.Column(db.Integer, primary_key=True)
+    order_id = db.Column(db.Integer, db.ForeignKey("order.id"), nullable=False)
+    delivery_guy_id = db.Column(db.Integer, db.ForeignKey("delivery_onboarding.id"), nullable=False)
+    status = db.Column(db.String(50), nullable=False)  # assigned, picked_up, delivered, cancelled, etc.
+    notes = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=get_current_time)
+    updated_at = db.Column(db.DateTime, default=get_current_time, onupdate=get_current_time)
+    
+    # Relationships
+    order = db.relationship("Order", backref="history")
+    delivery_guy = db.relationship("DeliveryOnboarding", backref="order_history")
+    
+    def __repr__(self):
+        return f"<OrderHistory {self.id} - Order: {self.order_id}, Delivery Guy: {self.delivery_guy_id}, Status: {self.status}>"
+    
+    def as_dict(self):
+        return {
+            "id": self.id,
+            "order_id": self.order_id,
+            "delivery_guy_id": self.delivery_guy_id,
+            "status": self.status,
+            "notes": self.notes,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None
         }

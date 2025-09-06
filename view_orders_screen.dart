@@ -218,6 +218,21 @@ class _ViewOrdersScreenState extends State<ViewOrdersScreen> {
     _loadOrders(refresh: true);
   }
 
+  Widget _buildStatusChip(OrderStatus status, String displayName) {
+    final isSelected = _selectedStatus == status;
+    return FilterChip(
+      label: Text(displayName),
+      selected: isSelected,
+      onSelected: (selected) {
+        if (selected) {
+          _onStatusFilterChanged(status);
+        }
+      },
+      selectedColor: Colors.blue[100],
+      checkmarkColor: Colors.blue[700],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -235,29 +250,28 @@ class _ViewOrdersScreenState extends State<ViewOrdersScreen> {
       ),
       body: Column(
         children: [
-          // Status Filter Chips
+          // Status Filter Chips - Show only relevant tabs
           Container(
             padding: const EdgeInsets.all(16),
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
-                children: OrderStatus.values.map((status) {
-                  final isSelected = _selectedStatus == status;
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: FilterChip(
-                      label: Text(status.displayName),
-                      selected: isSelected,
-                      onSelected: (selected) {
-                        if (selected) {
-                          _onStatusFilterChanged(status);
-                        }
-                      },
-                      selectedColor: Colors.blue[100],
-                      checkmarkColor: Colors.blue[700],
-                    ),
-                  );
-                }).toList(),
+                children: [
+                  // All Orders
+                  _buildStatusChip(OrderStatus.all, 'All Orders'),
+                  const SizedBox(width: 8),
+                  // Approved Orders
+                  _buildStatusChip(OrderStatus.confirmed, 'Approved'),
+                  const SizedBox(width: 8),
+                  // Cancelled Orders
+                  _buildStatusChip(OrderStatus.cancelled, 'Cancelled'),
+                  const SizedBox(width: 8),
+                  // Delivered Orders
+                  _buildStatusChip(OrderStatus.delivered, 'Delivered'),
+                  const SizedBox(width: 8),
+                  // Exchange Orders
+                  _buildStatusChip(OrderStatus.exchange, 'Exchange'),
+                ],
               ),
             ),
           ),
@@ -361,8 +375,8 @@ class _ViewOrdersScreenState extends State<ViewOrdersScreen> {
 
   Widget _buildOrderCard(Order order) {
     final isExpanded = _expandedOrders[order.id] ?? false;
-    final canApprove = order.status.toLowerCase() == 'pending';
-    final canReject = ['pending', 'confirmed', 'processing', 'shipped', 'out_for_delivery']
+    final canApprove = order.status.toLowerCase() == 'pending' || order.status.toLowerCase() == 'assigned';
+    final canReject = ['pending', 'assigned', 'confirmed', 'processing', 'shipped', 'out_for_delivery']
         .contains(order.status.toLowerCase());
 
     return Card(
@@ -465,19 +479,35 @@ class _ViewOrdersScreenState extends State<ViewOrdersScreen> {
                 ),
                 const SizedBox(height: 8),
                 
-                // Delivery Type
+                // Delivery Type and Track
                 Row(
                   children: [
                     const Icon(Icons.local_shipping, size: 16, color: Colors.grey),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        '${order.deliveryType.toUpperCase()} Delivery',
+                        order.deliveryTrackDisplay ?? '${order.deliveryType.toUpperCase()} Delivery',
                         style: const TextStyle(fontSize: 14),
                       ),
                     ),
                   ],
                 ),
+                const SizedBox(height: 8),
+                
+                // Delivery Assignment
+                if (order.deliveryGuyId != null)
+                  Row(
+                    children: [
+                      const Icon(Icons.person_pin, size: 16, color: Colors.grey),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Assigned to Delivery ID: ${order.deliveryGuyId}',
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                      ),
+                    ],
+                  ),
                 
                 // Action Buttons
                 const SizedBox(height: 16),
@@ -557,70 +587,132 @@ class _ViewOrdersScreenState extends State<ViewOrdersScreen> {
                   ),
                   const SizedBox(height: 8),
                   
-                  ...order.items.map((item) => Container(
+                  // Show assigned items if available, otherwise show all items
+                  ...(order.assignedItems.isNotEmpty ? order.assignedItems : order.items).map((item) => Container(
                     margin: const EdgeInsets.only(bottom: 8),
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: Colors.grey[100],
                       borderRadius: BorderRadius.circular(8),
+                      border: item.deliveryGuyId != null ? Border.all(color: Colors.blue, width: 1) : null,
                     ),
-                    child: Row(
+                    child: Column(
                       children: [
-                        if (item.productImage != null)
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: Image.network(
-                              item.productImage!,
-                              width: 40,
-                              height: 40,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                return Container(
+                        Row(
+                          children: [
+                            if (item.productImage != null)
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(4),
+                                child: Image.network(
+                                  item.productImage!,
                                   width: 40,
                                   height: 40,
-                                  color: Colors.grey[300],
-                                  child: const Icon(Icons.image),
-                                );
-                              },
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    return Container(
+                                      width: 40,
+                                      height: 40,
+                                      color: Colors.grey[300],
+                                      child: const Icon(Icons.image),
+                                    );
+                                  },
+                                ),
+                              )
+                            else
+                              Container(
+                                width: 40,
+                                height: 40,
+                                color: Colors.grey[300],
+                                child: const Icon(Icons.image),
+                              ),
+                            
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    item.productName,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w500,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Qty: ${item.quantity} × ₹${item.unitPrice.toStringAsFixed(2)}',
+                                    style: TextStyle(
+                                      color: Colors.grey[600],
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  if (item.selectedSize != null)
+                                    Text(
+                                      'Size: ${item.selectedSize}',
+                                      style: TextStyle(
+                                        color: Colors.grey[600],
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                ],
+                              ),
                             ),
-                          )
-                        else
-                          Container(
-                            width: 40,
-                            height: 40,
-                            color: Colors.grey[300],
-                            child: const Icon(Icons.image),
-                          ),
+                            Text(
+                              '₹${item.totalPrice.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
                         
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                item.productName,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w500,
-                                  fontSize: 14,
+                        // Item Status and Delivery Info
+                        if (item.deliveryGuyId != null || item.deliveryTrack != null)
+                          Container(
+                            margin: const EdgeInsets.only(top: 8),
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.blue[50],
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Row(
+                              children: [
+                                if (item.deliveryGuyId != null) ...[
+                                  const Icon(Icons.person, size: 14, color: Colors.blue),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Delivery ID: ${item.deliveryGuyId}',
+                                    style: const TextStyle(fontSize: 12, color: Colors.blue),
+                                  ),
+                                  const SizedBox(width: 12),
+                                ],
+                                if (item.deliveryTrack != null) ...[
+                                  const Icon(Icons.track_changes, size: 14, color: Colors.orange),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    item.deliveryTrackDisplay ?? item.deliveryTrack!,
+                                    style: const TextStyle(fontSize: 12, color: Colors.orange),
+                                  ),
+                                ],
+                                const Spacer(),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: _getItemStatusColor(item.status),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    item.status.toUpperCase(),
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                                 ),
-                              ),
-                              Text(
-                                'Qty: ${item.quantity} × ₹${item.unitPrice.toStringAsFixed(2)}',
-                                style: TextStyle(
-                                  color: Colors.grey[600],
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                        Text(
-                          '₹${item.totalPrice.toStringAsFixed(2)}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
-                        ),
                       ],
                     ),
                   )).toList(),
@@ -733,6 +825,33 @@ class _ViewOrdersScreenState extends State<ViewOrdersScreen> {
     switch (status.toLowerCase()) {
       case 'pending':
         return Colors.orange;
+      case 'assigned':
+        return Colors.blue;
+      case 'confirmed':
+        return Colors.green;
+      case 'processing':
+        return Colors.blue;
+      case 'shipped':
+        return Colors.purple;
+      case 'out_for_delivery':
+        return Colors.deepOrange;
+      case 'delivered':
+        return Colors.green;
+      case 'cancelled':
+        return Colors.red;
+      case 'rejected':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  Color _getItemStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'pending':
+        return Colors.orange;
+      case 'assigned':
+        return Colors.blue;
       case 'confirmed':
         return Colors.green;
       case 'processing':

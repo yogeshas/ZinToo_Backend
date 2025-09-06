@@ -1,0 +1,161 @@
+
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Delivery Barcode Sticker - ZT20241201123456ABC123</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            * {
+                box-sizing: border-box;
+            }
+            
+            @media print {
+                @page {
+                    size: 5in 3in;
+                    margin: 0.05in;
+                }
+                body {
+                    margin: 0;
+                    padding: 0;
+                    font-family: Arial, sans-serif;
+                    background: white;
+                }
+                .no-print {
+                    display: none !important;
+                }
+                .sticker {
+                    width: 4.9in;
+                    height: 2.9in;
+                    border: 2px solid #000;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    page-break-inside: avoid;
+                    background: white;
+                }
+                .barcode-image {
+                    max-width: 100%;
+                    max-height: 100%;
+                    object-fit: contain;
+                    image-rendering: -webkit-optimize-contrast;
+                    image-rendering: crisp-edges;
+                }
+            }
+            
+            body {
+                margin: 20px;
+                font-family: Arial, sans-serif;
+                background: #f5f5f5;
+            }
+            
+            .sticker {
+                width: 500px;
+                height: 300px;
+                border: 3px solid #333;
+                margin: 20px auto;
+                display: block;
+                text-align: center;
+                background: white;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                border-radius: 8px;
+            }
+            
+            .barcode-image {
+                max-width: 100%;
+                max-height: 100%;
+                object-fit: contain;
+                display: block;
+            }
+            
+            .print-button {
+                background-color: #28a745;
+                color: white;
+                padding: 15px 30px;
+                border: none;
+                border-radius: 8px;
+                cursor: pointer;
+                font-size: 18px;
+                margin: 20px;
+                display: block;
+                margin-left: auto;
+                margin-right: auto;
+                font-weight: bold;
+            }
+            
+            .print-button:hover {
+                background-color: #218838;
+            }
+            
+            .header {
+                text-align: center;
+                margin-bottom: 20px;
+            }
+            
+            .info {
+                background: white;
+                padding: 20px;
+                border-radius: 8px;
+                margin: 20px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            
+            .delivery-info {
+                background: #e8f5e8;
+                border: 2px solid #28a745;
+                padding: 15px;
+                border-radius: 8px;
+                margin: 20px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="no-print">
+            <div class="header">
+                <h2>🚚 Delivery Barcode Sticker - ZT20241201123456ABC123</h2>
+                <p><strong>Product:</strong> Premium Wireless Headphones</p>
+                <p><strong>ID:</strong> 12345</p>
+            </div>
+            
+            <button class="print-button" onclick="window.print()">🖨️ Print Delivery Sticker</button>
+            
+            <div class="delivery-info">
+                <h3>📦 Delivery Instructions:</h3>
+                <ul>
+                    <li><strong>Size:</strong> 5" x 3" sticker paper recommended</li>
+                    <li><strong>Quality:</strong> Set printer to highest quality</li>
+                    <li><strong>Paper:</strong> Use white sticker paper or labels</li>
+                    <li><strong>Scanning:</strong> Optimized for mobile barcode scanners</li>
+                    <li><strong>Visibility:</strong> High contrast for easy scanning</li>
+                </ul>
+            </div>
+            
+            <div class="info">
+                <h3>🔍 Scanning Tips for Delivery Personnel:</h3>
+                <ul>
+                    <li>Ensure good lighting when scanning</li>
+                    <li>Hold scanner 6-12 inches from barcode</li>
+                    <li>Keep barcode flat and straight</li>
+                    <li>Clean barcode if dirty or damaged</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="sticker">
+            <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAfQAAAEsCAIAAAC62dafAAAACXBIWXMAAC4jAAAuIwF4pT92AAAOm0lEQVR4nO3daWwV5f7A8edQOS3FBQIouCC4R4lL3ABJ1EgiCoKKooKKazREXygYVIiowQCGiHoV8IUaCQkCIrgvETW4EsElBDdIrKi4F4RqsdL2vpj/7b+3hXJa4FZ/fD5v9Mx5zjzT6eHbYc5MSQkAAPj7y2X/qa2tbd3tAGCHyOVyKaU2rb0ZAOx44g4QkLgDBCTuAAGJO0BA4g4QkLgDBCTuu6jx48fntqV3797Z4JkzZ+ZyuUGDBhW+/vvvv3+b6898/PHHO+UrbGT16tWNZy8uLu7UqdOJJ554++23l5WVtWzNkydPzuVyl156afawBbsLdjhxZ5dWVVVVXl6+bNmySZMm9erVa/bs2a29RbBD1cJ/zJw5M3tXPPHEEztwtSeffHJKacKECTtwnc2yatWq7Ov66quv6hZWVVWtXbt20aJFvXr1SikVFRUtWrSouWueNGlSSmnEiBE7cnOhpbL3uSN3/svzzz8/atSolNLo0aMvv/zy1t6cna5t27bdunUbMmTI8uXL+/btW11dPWrUqMrKytbeLthe4s7/++yzz4YPH15TUzNgwIApU6bULW9wEvmhhx7K5XITJ05cuXLlJZdc0q1bt+Li4p49e44ePbq8vHx7NmDFihUjR4484IAD8vl8ly5dBg4c+OKLL7Z4WLPk8/n58+eXlJSsXbt21qxZ9Z8qKyu7/vrre/bsWVxc3Llz54EDB77yyitNrKr+7rrjjjtyudw555zTeNjIkSNzudzYsWMLnyj7JGPq1Knz58/v0aNHaWnpcccdl01x1FFHNZ5i4sSJuVzu6quvbtauIJTW/msErW/dunWHHnpoSunwww9fv359/admzJiRUho4cGD28F//+ldKqX///iUlJQ3eSEceeWRlZeUW17/N0zKPP/5427ZtG785R40a1YJhjW3xtEwDF198cUppyJAhdUtefvnl3XffvfF0t956a92YBqdl6u+ubNJ8Pl9eXl5/osrKyj333DOltGLFisInmjZtWkpp6NChRUVF2bP77LPP2rVrd9ttt5TS8uXLG3w5WfEXL17c9J4hmOy94cidlFKqqakZPnz4qlWrOnTo8Oyzz+61117bfMlrr722xx57PP744z/++GN5efmUKVNyudynn37ass8kP/jgg2uuueavv/4aMGDAhx9++Oeff5aVld1yyy25XG769OkPPvhgs4a1WJ8+fVJKS5cuzR5+/fXXw4YNq6ioGDRo0NKlSysqKr7//vtp06a1a9du8uTJc+bM2eYKDznkkN69e1dVVT399NP1l7/wwgsbNmw45phjsnP9zZpowYIFp59+ellZ2fr161955ZVu3boNGDAgpdRgz69cuXLlypX77bffaaedtl07hX+01v5JQyvLTg4UFRW9/PLLjZ/d4pF7Sum9996rP+yCCy5IKV1xxRVbnKLpI/fBgwenlE4//fTq6ur6y+++++6UUufOnTdt2lT4sC0q5Mh9wYIF2X6oqampra294YYbUkpnnnlmg+meeOKJlNJhhx2WPWziyL22tvbhhx9OKfXv37/+GoYOHZpSmjp1avawwImyI/c2bdp899139YfNmzcvpdS1a9fNmzfXLRw/fnxKacyYMVv7Yokqe587cifNmzcvO8N+7733nnnmmQW+6tBDD627ED5z0kknpZTWr1/f3A2oqqp67bXXUkrjxo1r0+a/3pOjR49u3779L7/8snTp0gKHNXf2+vL5fEqpurr6jz/+SCk988wzKaVRo0Y1mO7iiy8uKSn58ssvV69evc11XnTRRfl8/o033vjpp5+yJRs3bnzhhRfatGlzySWXZEuaNdERRxyx77771h82ePDgDh06/PDDD4sXL65bOHfu3JTSiBEjCv/yiUTcd3WffPLJlVdemVIaOXLkzTffXPgLDzrooAZLslPGmzdvbu42fPvtt1lMs7Mi9ZWWlh599NEppS+//LLAYc2dvb7ffvstpdSmTZvS0tKNGzd+8803KaUhQ4Y0vvVp06ZNKaUvvvhim+vs1KnT2WefXV1dPX/+/GzJ008/vWnTpjPOOCNrdHMn6t69e4MpiouLL7zwwlTvzMzy5ctXrVp11FFHHXvssduzQ/jnEvdd2q+//nruuef+8ccfvXv3fuSRR5r12safpmb//ktt8/9Vr40bN6aUdtttt9LS0sbPZh88VlZWFjisubPXt2bNmpTSvvvum8vlNmzYsM3xhYxJKV122WUppSeffDJ7mJ1DzxYWuJL6Y9q3b7+1KRYuXJj9/Mvmcti+KxP3XdfmzZuHDRtWVla2//77L1y4sLi4uLW2pO6Q//fff2/87Lp161JKnTp1KnDY9mzJW2+9lf5zfqnuR8inn366tZObdedVmjZo0KCOHTu+884733777c8//7x48eLS0tLzzjsve3aHTNSvX7+ePXtWVFQ899xztbW18+bNy+Vyw4cPb9l+IABx33WNGTPm9ddfb9eu3aJFi7p27dqKW9K9e/d27dqllN5///0GT1VUVKxYsSIbU+CwFm/GV1999eqrr6aUzj///JRSx44du3TpklJ69913W7zOTD6fHzZsWG1t7TPPPLNgwYLNmzefd955dRc+7pCJ6n65zcKFC5csWbJmzZp+/fodeOCB27nl/HOJ+y5q1qxZDzzwQErpscceO/7441t3Y9q2bdu/f/+U0j333FNTU1P/qfvuu6+ysrJz5859+vQpcFjLtqGqquqKK66orq4+8MADs0tZUkpnnXVWSmnixIkN/q6wdOnSoqKikpKSus9Itym73ffZZ5/NLsipOyezAyfKpnjppZeyM2x1v8iMXZO474qWLVt23XXXpZTGjx+f3bbT6saNG1dUVPTGG28MGjToo48+qqqqWrNmzdixY++8886U0q233prdtlPgsMJt2rTp66+/njNnzsknn7xkyZKioqJHHnmk7uOEsWPHlpSUlJWVnXHGGUuWLPnzzz/Ly8tnz549cODAmpqayy+/fO+99y5wor59+x588MFvvvnmkiVLunbtmv2UqrNDJsquqd+wYcOcOXPy+Xz2ESu7up1wqSV/X+PGjSvwjbFu3brarVznXv82zkyDYQ1s8w7VRx99NLvTsoHrr78+u+q8WcMaq7vOfWvat28/d+7cBq+aN2/eFj+NOPXUU+vuxW36Ovc6EyZMyF570003Nd68Qiaqu0N1a1/j9OnTs1ede+65TewKYsveA47c+bu46qqrli1bNmLEiP322y+fz3fr1m3w4MEvvfTSjBkzsutwmjWsQG3btu3cufMpp5xy1113rV69etiwYQ0GXHjhhZ988sm1117bo0ePfD5fWlp6wgknTJs27dVXX218vVDT6k7FbPGEyQ6ZKLumPrlOhpT+7w9DbfMvXwP+br777rvu3bvvtddea9eube7PHsLIjnIcuUMcs2bNqqmpueyyy5QdR+7wj/fDDz907Njx7bffHjp0aEVFxeeff37IIYe09kbRarIj9y18MAX8s9x4441PPfVU9v9jxoxRdpLTMhBAnz59OnTosPfee992222TJ09u7c3hb8FpGYBQfKAKEJa4AwQk7gABiTtAQOIOEJC4AwQk7gABiTtAQIX+itQW3+XU9G9hbWK1Lfj1rdtcZ9NaPGMTdsbG7KQ7zlo84//+O9WEv9U3sWn/4x3e4nXupO9+i+2MaLRsuqZn3EkvLISbmADCEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwhI3AECEneAgMQdICBxBwAAAGgV/wbTU3XefCeCzAAAAABJRU5ErkJggg==" alt="Delivery Barcode ZT20241201123456ABC123" class="barcode-image">
+        </div>
+        
+        <script>
+            // Handle print events
+            window.addEventListener('beforeprint', function() {
+                console.log('Printing delivery barcode sticker...');
+            });
+            
+            window.addEventListener('afterprint', function() {
+                console.log('Delivery sticker print completed');
+            });
+        </script>
+    </body>
+    </html>
+    

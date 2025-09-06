@@ -5,6 +5,7 @@ from services.order_service import (
     update_order_status,
     cancel_order
 )
+from services.order_item_service import assign_delivery_guy_to_order_bulk
 from services.wallet_service import refund_to_wallet
 from models.delivery_onboarding import DeliveryOnboarding
 from models.order import Order
@@ -420,4 +421,53 @@ def get_rejected_orders(current_admin):
         
     except Exception as e:
         print(f"Get rejected orders error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+@admin_order_bp.route("/<int:order_id>/assign-delivery-bulk", methods=["POST"])
+@require_admin_auth
+def assign_delivery_bulk(current_admin, order_id):
+    """Assign delivery guy to all items in an order (bulk assignment)"""
+    try:
+        admin_id = current_admin["id"]
+        
+        # Get request data (encrypted payload)
+        data = request.get_json() or {}
+        payload = data.get("payload")
+        
+        if not payload:
+            return jsonify({"error": "Missing encrypted payload"}), 400
+        
+        # Decrypt the payload
+        try:
+            decrypted_data = decrypt_payload(payload)
+        except Exception as e:
+            print(f"Error decrypting payload: {e}")
+            return jsonify({"error": "Invalid encrypted payload"}), 401
+        
+        delivery_guy_id = decrypted_data.get("delivery_guy_id")
+        notes = decrypted_data.get("notes", "")
+        
+        if not delivery_guy_id:
+            return jsonify({"error": "Delivery guy ID is required"}), 400
+        
+        # Assign delivery guy to all items in the order
+        result = assign_delivery_guy_to_order_bulk(
+            order_id=order_id,
+            delivery_guy_id=delivery_guy_id,
+            admin_id=admin_id,
+            notes=notes
+        )
+        
+        if result["success"]:
+            # Encrypt the response
+            encrypted_data = encrypt_payload(result)
+            return jsonify({
+                "success": True,
+                "encrypted_data": encrypted_data
+            }), 200
+        else:
+            return jsonify({"error": result["message"]}), 400
+        
+    except Exception as e:
+        print(f"Error assigning delivery to order (bulk): {e}")
         return jsonify({"error": "Internal server error"}), 500

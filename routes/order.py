@@ -78,6 +78,7 @@ def update_status(current_customer, order_id):
         
         decrypted_data = decrypt_payload(encrypted_data)
         status = decrypted_data.get("status")
+        print(f"[ORDER ROUTE] Status: {status}")
         
         if not status:
             return jsonify({"error": "Status is required"}), 400

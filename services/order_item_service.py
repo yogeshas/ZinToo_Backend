@@ -8,8 +8,9 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 import json
 from extensions import db
-from models.order import Order, OrderItem
+from models.order import Order, OrderItem, OrderHistory
 from models.exchange import Exchange
+from models.delivery_onboarding import DeliveryOnboarding
 
 
 def get_order_item_by_id(item_id: int) -> Optional[OrderItem]:
@@ -421,3 +422,216 @@ def _determine_overall_order_status(items: List[OrderItem]) -> str:
     
     # Default to pending
     return "pending"
+
+
+def assign_delivery_guy_to_order_item(
+    item_id: int,
+    delivery_guy_id: int,
+    admin_id: int,
+    notes: str = ""
+) -> Dict[str, Any]:
+    """
+    Assign delivery guy to individual order item
+    
+    Args:
+        item_id: OrderItem ID to assign delivery to
+        delivery_guy_id: Delivery guy ID to assign
+        admin_id: Admin ID making the assignment
+        notes: Assignment notes
+    
+    Returns:
+        Dict with success status and message
+    """
+    try:
+        # Get the order item
+        item = OrderItem.query.get(item_id)
+        if not item:
+            return {"success": False, "message": "Order item not found"}
+        
+        # Verify delivery guy exists
+        delivery_guy = DeliveryOnboarding.query.get(delivery_guy_id)
+        if not delivery_guy:
+            return {"success": False, "message": "Delivery guy not found"}
+        
+        # Check if delivery guy is approved
+        if delivery_guy.status != "approved":
+            return {"success": False, "message": "Delivery guy is not approved"}
+        
+        # Get order information
+        order = Order.query.get(item.order_id)
+        if not order:
+            return {"success": False, "message": "Order not found"}
+        
+        # Assign delivery guy to order item
+        item.delivery_guy_id = delivery_guy_id
+        item.status = "assigned"
+        item.refund_status = "assigned"
+        item.updated_at = datetime.utcnow()
+        
+        # Create order history entry
+        history_entry = OrderHistory(
+            order_id=order.id,
+            delivery_guy_id=delivery_guy_id,
+            status="item_assigned",
+            notes=f"Individual product '{item.product_name}' assigned to delivery guy. {notes}",
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+        db.session.add(history_entry)
+        
+        # Update order delivery notes
+        timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+        delivery_guy_name = f"{delivery_guy.first_name} {delivery_guy.last_name}".strip()
+        assignment_note = f"\n[ITEM ASSIGNED] {timestamp} - Admin {admin_id}: Product '{item.product_name}' assigned to {delivery_guy_name}. {notes}"
+        order.delivery_notes = (order.delivery_notes or "") + assignment_note
+        
+        db.session.commit()
+        
+        delivery_guy_name = f"{delivery_guy.first_name} {delivery_guy.last_name}".strip()
+        return {
+            "success": True,
+            "message": f"Product '{item.product_name}' assigned to {delivery_guy_name} successfully",
+            "item": item.as_dict(),
+            "delivery_guy": {
+                "id": delivery_guy.id,
+                "name": delivery_guy_name,
+                "phone_number": delivery_guy.primary_number
+            }
+        }
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error assigning delivery to order item: {e}")
+        return {"success": False, "message": "Failed to assign delivery to order item"}
+
+
+def get_available_delivery_guys() -> Dict[str, Any]:
+    """
+    Get list of available delivery guys for assignment
+    
+    Returns:
+        Dict with success status and delivery guys list
+    """
+    try:
+        # Get approved delivery guys
+        delivery_guys = DeliveryOnboarding.query.filter_by(status="approved").all()
+        
+        delivery_guys_data = []
+        for guy in delivery_guys:
+            # Count active orders for this delivery guy
+            active_orders_count = Order.query.filter_by(
+                delivery_guy_id=guy.id,
+                status__in=["assigned", "confirmed", "processing", "shipped", "out_for_delivery"]
+            ).count()
+            
+            # Count assigned order items
+            assigned_items_count = OrderItem.query.filter_by(delivery_guy_id=guy.id).count()
+            
+            delivery_guys_data.append({
+                "id": guy.id,
+                "name": f"{guy.first_name} {guy.last_name}".strip(),
+                "phone_number": guy.primary_number,
+                "email": guy.email,
+                "status": guy.status,
+                "vehicle_number": guy.vehicle_number,
+                "active_orders_count": active_orders_count,
+                "assigned_items_count": assigned_items_count,
+                "rating": getattr(guy, 'rating', 0),
+                "total_deliveries": getattr(guy, 'total_deliveries', 0),
+                "onboarding_details": {
+                    "approved_at": guy.approved_at.isoformat() if guy.approved_at else None
+                }
+            })
+        
+        return {
+            "success": True,
+            "delivery_guys": delivery_guys_data,
+            "total_count": len(delivery_guys_data)
+        }
+        
+    except Exception as e:
+        print(f"Error getting available delivery guys: {e}")
+        return {"success": False, "message": "Failed to get available delivery guys"}
+
+
+def assign_delivery_guy_to_order_bulk(
+    order_id: int,
+    delivery_guy_id: int,
+    admin_id: int,
+    notes: str = ""
+) -> Dict[str, Any]:
+    """
+    Assign delivery guy to all items in an order (bulk assignment)
+    
+    Args:
+        order_id: Order ID to assign delivery to
+        delivery_guy_id: Delivery guy ID to assign
+        admin_id: Admin ID making the assignment
+        notes: Assignment notes
+    
+    Returns:
+        Dict with success status and message
+    """
+    try:
+        # Get the order
+        order = Order.query.get(order_id)
+        if not order:
+            return {"success": False, "message": "Order not found"}
+        
+        # Verify delivery guy exists
+        delivery_guy = DeliveryOnboarding.query.get(delivery_guy_id)
+        if not delivery_guy:
+            return {"success": False, "message": "Delivery guy not found"}
+        
+        # Check if delivery guy is approved
+        if delivery_guy.status != "approved":
+            return {"success": False, "message": "Delivery guy is not approved"}
+        
+        # Get all order items
+        order_items = OrderItem.query.filter_by(order_id=order_id).all()
+        if not order_items:
+            return {"success": False, "message": "No items found in order"}
+        
+        # Assign delivery guy to all items
+        assigned_items = []
+        for item in order_items:
+            item.delivery_guy_id = delivery_guy_id
+            item.updated_at = datetime.utcnow()
+            assigned_items.append(item.as_dict())
+        
+        # Create order history entry
+        history_entry = OrderHistory(
+            order_id=order.id,
+            delivery_guy_id=delivery_guy_id,
+            status="bulk_assigned",
+            notes=f"All products in order assigned to delivery guy. {notes}",
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+        db.session.add(history_entry)
+        
+        # Update order delivery notes
+        timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+        delivery_guy_name = f"{delivery_guy.first_name} {delivery_guy.last_name}".strip()
+        assignment_note = f"\n[BULK ASSIGNED] {timestamp} - Admin {admin_id}: All products assigned to {delivery_guy_name}. {notes}"
+        order.delivery_notes = (order.delivery_notes or "") + assignment_note
+        
+        db.session.commit()
+        
+        delivery_guy_name = f"{delivery_guy.first_name} {delivery_guy.last_name}".strip()
+        return {
+            "success": True,
+            "message": f"All products in order assigned to {delivery_guy_name} successfully",
+            "assigned_items": assigned_items,
+            "delivery_guy": {
+                "id": delivery_guy.id,
+                "name": delivery_guy_name,
+                "phone_number": delivery_guy.primary_number
+            },
+            "total_items_assigned": len(assigned_items)
+        }
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error assigning delivery to order (bulk): {e}")
+        return {"success": False, "message": "Failed to assign delivery to order"}

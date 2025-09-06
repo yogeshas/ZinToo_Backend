@@ -34,6 +34,26 @@ def health_check():
         'timestamp': datetime.now().isoformat()
     })
 
+# Static file serving for assets
+@app.route('/assets/<path:filename>')
+def serve_assets(filename):
+    """Serve static files from assets directory"""
+    from flask import send_from_directory
+    import os
+    
+    # Security check - ensure file path is within assets directory
+    allowed_path = os.path.join(app.root_path, 'assets')
+    full_path = os.path.join(app.root_path, 'assets', filename)
+    
+    # Check if the resolved path is within the allowed directory
+    if not os.path.commonpath([os.path.abspath(full_path), os.path.abspath(allowed_path)]) == os.path.abspath(allowed_path):
+        return jsonify({"error": "Access denied"}), 403
+    
+    if not os.path.exists(full_path):
+        return jsonify({"error": "File not found"}), 404
+    
+    return send_from_directory(os.path.dirname(full_path), os.path.basename(filename))
+
 # Import models to register them with SQLAlchemy (after app creation)
 from models.category import Category
 from models.subcategory import SubCategory
@@ -54,6 +74,7 @@ from models.delivery_onboarding import DeliveryOnboarding
 from models.delivery_loyalty import Delivery_Loyalty
 from models.otp import OTP
 from models.exchange import Exchange
+from models.earnings_management import EarningsManagement
 
 # Import blueprints (after models are imported)
 from routes.customer import customer_bp
@@ -116,6 +137,10 @@ try:
     from routes.delivery_mobile import delivery_mobile_bp
     from routes.delivery_onboarding import delivery_onboarding_bp
     from routes.delivery_order import delivery_order_bp
+    from routes.delivery_enhanced import delivery_enhanced_bp
+    from routes.delivery_orders_enhanced import delivery_orders_enhanced_bp
+    from routes.delivery_leave_requests import delivery_leave_requests_bp
+    from routes.earnings_management import earnings_management_bp
     from routes.exchange import exchange_bp
     from routes.order_items import order_items_bp
     
@@ -130,6 +155,10 @@ try:
     app.register_blueprint(delivery_mobile_bp, url_prefix='/api/delivery-mobile')
     app.register_blueprint(delivery_onboarding_bp, url_prefix='/api/delivery')
     app.register_blueprint(delivery_order_bp, url_prefix='/api/delivery')
+    app.register_blueprint(delivery_enhanced_bp, url_prefix='/api/delivery-enhanced')
+    app.register_blueprint(delivery_orders_enhanced_bp, url_prefix='/api/delivery-orders')
+    app.register_blueprint(delivery_leave_requests_bp, url_prefix='/api/leave-requests')
+    app.register_blueprint(earnings_management_bp, url_prefix='/api/earnings-management')
     app.register_blueprint(exchange_bp, url_prefix='/api/exchanges')
     app.register_blueprint(order_items_bp, url_prefix='/api/order-items')
     print("✅ New blueprints registered successfully")
