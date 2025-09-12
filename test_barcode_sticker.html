@@ -1,0 +1,146 @@
+
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Barcode Sticker - ZT20241201123456ABC123</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            * {
+                box-sizing: border-box;
+            }
+            
+            @media print {
+                @page {
+                    size: 4in 2.5in;
+                    margin: 0.05in;
+                }
+                body {
+                    margin: 0;
+                    padding: 0;
+                    font-family: Arial, sans-serif;
+                    background: white;
+                }
+                .no-print {
+                    display: none !important;
+                }
+                .sticker {
+                    width: 3.9in;
+                    height: 2.4in;
+                    border: 1px solid #000;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    page-break-inside: avoid;
+                    background: white;
+                }
+                .barcode-image {
+                    max-width: 100%;
+                    max-height: 100%;
+                    object-fit: contain;
+                    image-rendering: -webkit-optimize-contrast;
+                    image-rendering: crisp-edges;
+                }
+            }
+            
+            body {
+                margin: 20px;
+                font-family: Arial, sans-serif;
+                background: #f5f5f5;
+            }
+            
+            .sticker {
+                width: 400px;
+                height: 250px;
+                border: 2px solid #333;
+                margin: 20px auto;
+                display: block;
+                text-align: center;
+                background: white;
+                box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+                border-radius: 8px;
+            }
+            
+            .barcode-image {
+                max-width: 100%;
+                max-height: 100%;
+                object-fit: contain;
+                display: block;
+            }
+            
+            .print-button {
+                background-color: #007bff;
+                color: white;
+                padding: 12px 24px;
+                border: none;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 16px;
+                margin: 20px;
+                display: block;
+                margin-left: auto;
+                margin-right: auto;
+            }
+            
+            .print-button:hover {
+                background-color: #0056b3;
+            }
+            
+            .header {
+                text-align: center;
+                margin-bottom: 20px;
+            }
+            
+            .info {
+                background: white;
+                padding: 20px;
+                border-radius: 8px;
+                margin: 20px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+        </style>
+    </head>
+    <body>
+        <div class="no-print">
+            <div class="header">
+                <h2>Barcode Sticker - ZT20241201123456ABC123</h2>
+                <p>Product: Test Product Name</p>
+                <p>ID: 123</p>
+            </div>
+            
+            <button class="print-button" onclick="window.print()">🖨️ Print Sticker</button>
+            
+            <div class="info">
+                <h3>Print Instructions:</h3>
+                <ul>
+                    <li>Use 4" x 2.5" sticker paper</li>
+                    <li>Set printer to high quality</li>
+                    <li>Ensure margins are set to minimum</li>
+                    <li>Test print on regular paper first</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="sticker">
+            <img src="data:image/png;base64,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" alt="Barcode ZT20241201123456ABC123" class="barcode-image">
+        </div>
+        
+        <script>
+            // Auto-print when page loads (uncomment to enable)
+            // window.onload = function() { 
+            //     setTimeout(() => { window.print(); }, 1000);
+            // };
+            
+            // Handle print events
+            window.addEventListener('beforeprint', function() {
+                console.log('Printing barcode sticker...');
+            });
+            
+            window.addEventListener('afterprint', function() {
+                console.log('Print completed');
+            });
+        </script>
+    </body>
+    </html>
+    

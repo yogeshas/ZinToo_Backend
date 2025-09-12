@@ -1,0 +1,164 @@
+nohup: ignoring input
+/home/ubuntu/zintoo/venv/lib/python3.12/site-packages/razorpay/client.py:4: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+⚠️ Using test mode - Razorpay integration will be simulated
+✅ New blueprints registered successfully
+ * Serving Flask app 'app'
+ * Debug mode: on
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://172.31.15.146:5000
+[33mPress CTRL+C to quit[0m
+ * Restarting with stat
+/home/ubuntu/zintoo/venv/lib/python3.12/site-packages/razorpay/client.py:4: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+ * Debugger is active!
+ * Debugger PIN: 657-547-012
+127.0.0.1 - - [11/Sep/2025 06:51:32] "GET /api/categories/ HTTP/1.1" 200 -
+ * Detected change in '/home/ubuntu/zintoo/utils/s3_service.py', reloading
+⚠️ Using test mode - Razorpay integration will be simulated
+✅ New blueprints registered successfully
+ * Restarting with stat
+/home/ubuntu/zintoo/venv/lib/python3.12/site-packages/razorpay/client.py:4: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+ * Debugger is active!
+ * Debugger PIN: 657-547-012
+ * Detected change in '/home/ubuntu/zintoo/utils/s3_service.py', reloading
+⚠️ Using test mode - Razorpay integration will be simulated
+✅ New blueprints registered successfully
+ * Restarting with stat
+/home/ubuntu/zintoo/venv/lib/python3.12/site-packages/razorpay/client.py:4: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+ * Debugger is active!
+ * Debugger PIN: 657-547-012
+ * Detected change in '/home/ubuntu/zintoo/utils/s3_service.py', reloading
+⚠️ Using test mode - Razorpay integration will be simulated
+✅ New blueprints registered successfully
+ * Restarting with stat
+/home/ubuntu/zintoo/venv/lib/python3.12/site-packages/razorpay/client.py:4: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+ * Debugger is active!
+ * Debugger PIN: 657-547-012
+ * Detected change in '/home/ubuntu/zintoo/routes/review.py', reloading
+⚠️ Using test mode - Razorpay integration will be simulated
+✅ New blueprints registered successfully
+ * Restarting with stat
+/home/ubuntu/zintoo/venv/lib/python3.12/site-packages/razorpay/client.py:4: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+ * Debugger is active!
+ * Debugger PIN: 657-547-012
+ * Detected change in '/home/ubuntu/zintoo/routes/review.py', reloading
+⚠️ Using test mode - Razorpay integration will be simulated
+✅ New blueprints registered successfully
+ * Restarting with stat
+/home/ubuntu/zintoo/venv/lib/python3.12/site-packages/razorpay/client.py:4: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+ * Debugger is active!
+ * Debugger PIN: 657-547-012
+ * Detected change in '/home/ubuntu/zintoo/routes/review.py', reloading
+⚠️ Using test mode - Razorpay integration will be simulated
+✅ New blueprints registered successfully
+ * Restarting with stat
+/home/ubuntu/zintoo/venv/lib/python3.12/site-packages/razorpay/client.py:4: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+ * Debugger is active!
+ * Debugger PIN: 657-547-012
+ * Detected change in '/home/ubuntu/zintoo/routes/review.py', reloading
+⚠️ Using test mode - Razorpay integration will be simulated
+✅ New blueprints registered successfully
+ * Restarting with stat
+/home/ubuntu/zintoo/venv/lib/python3.12/site-packages/razorpay/client.py:4: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+ * Debugger is active!
+ * Debugger PIN: 657-547-012
+ * Detected change in '/home/ubuntu/zintoo/routes/review.py', reloading
+⚠️ Using test mode - Razorpay integration will be simulated
+✅ New blueprints registered successfully
+ * Restarting with stat
+/home/ubuntu/zintoo/venv/lib/python3.12/site-packages/razorpay/client.py:4: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+ * Debugger is active!
+ * Debugger PIN: 657-547-012
+ * Detected change in '/home/ubuntu/zintoo/utils/s3_service.py', reloading
+⚠️ Using test mode - Razorpay integration will be simulated
+✅ New blueprints registered successfully
+ * Restarting with stat
+/home/ubuntu/zintoo/venv/lib/python3.12/site-packages/razorpay/client.py:4: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+ * Debugger is active!
+ * Debugger PIN: 657-547-012
+ * Detected change in '/home/ubuntu/zintoo/services/category_service.py', reloading
+⚠️ Using test mode - Razorpay integration will be simulated
+✅ New blueprints registered successfully
+ * Restarting with stat
+/home/ubuntu/zintoo/venv/lib/python3.12/site-packages/razorpay/client.py:4: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+ * Debugger is active!
+ * Debugger PIN: 657-547-012
+122.172.83.153 - - [11/Sep/2025 06:59:02] "OPTIONS /api/categories/12 HTTP/1.1" 200 -
+122.172.83.153 - - [11/Sep/2025 06:59:02] "DELETE /api/categories/12 HTTP/1.1" 200 -
+122.172.83.153 - - [11/Sep/2025 06:59:03] "GET /api/categories/ HTTP/1.1" 200 -
+122.172.83.153 - - [11/Sep/2025 06:59:03] "[33mGET /api/categories/images/https:%2F%2Fzintoo.s3.us-east-1.amazonaws.com%2Fcategory%2Fcategory_13_4744dfc6.png HTTP/1.1[0m" 404 -
+122.172.83.153 - - [11/Sep/2025 06:59:07] "OPTIONS /api/categories/13 HTTP/1.1" 200 -
+ * Detected change in '/home/ubuntu/zintoo/test_category_frontend.py', reloading
+⚠️ Using test mode - Razorpay integration will be simulated
+✅ New blueprints registered successfully
+ * Restarting with stat
+/home/ubuntu/zintoo/venv/lib/python3.12/site-packages/razorpay/client.py:4: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+ * Debugger is active!
+ * Debugger PIN: 657-547-012
+122.172.83.153 - - [11/Sep/2025 06:59:13] "DELETE /api/categories/13 HTTP/1.1" 200 -
+122.172.83.153 - - [11/Sep/2025 06:59:13] "GET /api/categories/ HTTP/1.1" 200 -
+127.0.0.1 - - [11/Sep/2025 06:59:18] "[35m[1mPOST /api/categories/ HTTP/1.1[0m" 500 -
+127.0.0.1 - - [11/Sep/2025 06:59:18] "GET /api/categories/ HTTP/1.1" 200 -
+ * Detected change in '/home/ubuntu/zintoo/test_category_frontend.py', reloading
+⚠️ Using test mode - Razorpay integration will be simulated
+✅ New blueprints registered successfully
+✅ File deleted successfully: category/category_13_4744dfc6.png
+❌ Backend decryption failed: Incorrect padding
+❌ Create category error: Decryption failed: Incorrect padding. Ensure frontend NEXT_PUBLIC_CRYPTO_SECRET equals backend CRYPTO_SECRET and both are exactly 32 ASCII characters.
+ * Restarting with stat
+/home/ubuntu/zintoo/venv/lib/python3.12/site-packages/razorpay/client.py:4: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+ * Debugger is active!
+ * Debugger PIN: 657-547-012
+122.172.83.153 - - [11/Sep/2025 06:59:59] "GET /api/categories/ HTTP/1.1" 200 -
+122.172.83.153 - - [11/Sep/2025 06:59:59] "[33mGET /api/categories/images/https:%2F%2Fzintoo.s3.us-east-1.amazonaws.com%2Fcategory%2Fcategory_14_dcc4f427.png HTTP/1.1[0m" 404 -
+122.172.83.153 - - [11/Sep/2025 07:00:14] "[35m[1mPOST /api/categories/ HTTP/1.1[0m" 201 -
+122.172.83.153 - - [11/Sep/2025 07:00:15] "GET /api/categories/ HTTP/1.1" 200 -
+122.172.83.153 - - [11/Sep/2025 07:00:15] "[33mGET /api/categories/images/https:%2F%2Fzintoo.s3.us-east-1.amazonaws.com%2Fcategory%2Fcategory_14_dcc4f427.png HTTP/1.1[0m" 404 -
+122.172.83.153 - - [11/Sep/2025 07:00:15] "[33mGET /api/categories/images/https:%2F%2Fzintoo.s3.us-east-1.amazonaws.com%2Fcategory%2Fcategory_15_95553cdc.png HTTP/1.1[0m" 404 -
+122.172.83.153 - - [11/Sep/2025 07:00:55] "GET /api/categories/ HTTP/1.1" 200 -
+122.172.83.153 - - [11/Sep/2025 07:00:55] "[33mGET /api/categories/images/https:%2F%2Fzintoo.s3.us-east-1.amazonaws.com%2Fcategory%2Fcategory_15_95553cdc.png HTTP/1.1[0m" 404 -
+122.172.83.153 - - [11/Sep/2025 07:01:49] "[35m[1mPOST /api/categories/ HTTP/1.1[0m" 201 -
+122.172.83.153 - - [11/Sep/2025 07:01:49] "GET /api/categories/ HTTP/1.1" 200 -
+122.172.83.153 - - [11/Sep/2025 07:01:49] "[33mGET /api/categories/images/https:%2F%2Fzintoo.s3.us-east-1.amazonaws.com%2Fcategory%2Fcategory_16_d2737bc7.png HTTP/1.1[0m" 404 -
+122.172.83.153 - - [11/Sep/2025 07:01:49] "[33mGET /api/categories/images/https:%2F%2Fzintoo.s3.us-east-1.amazonaws.com%2Fcategory%2Fcategory_15_95553cdc.png HTTP/1.1[0m" 404 -
+ * Detected change in '/home/ubuntu/zintoo/test_api_working.py', reloading
+⚠️ Using test mode - Razorpay integration will be simulated
+✅ New blueprints registered successfully
+✅ File uploaded successfully: https://zintoo.s3.us-east-1.amazonaws.com/category/category_15_95553cdc.png
+✅ File uploaded successfully: https://zintoo.s3.us-east-1.amazonaws.com/category/category_16_d2737bc7.png
+ * Restarting with stat
+/home/ubuntu/zintoo/venv/lib/python3.12/site-packages/razorpay/client.py:4: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+ * Debugger is active!
+ * Debugger PIN: 657-547-012
+ * Detected change in '/home/ubuntu/zintoo/test_api_working.py', reloading
+⚠️ Using test mode - Razorpay integration will be simulated
+✅ New blueprints registered successfully
+ * Restarting with stat
+/home/ubuntu/zintoo/venv/lib/python3.12/site-packages/razorpay/client.py:4: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+ * Debugger is active!
+ * Debugger PIN: 657-547-012
+ * Detected change in '/home/ubuntu/zintoo/test_api_working.py', reloading
+⚠️ Using test mode - Razorpay integration will be simulated
+✅ New blueprints registered successfully
+ * Restarting with stat
+/home/ubuntu/zintoo/venv/lib/python3.12/site-packages/razorpay/client.py:4: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+ * Debugger is active!
+ * Debugger PIN: 657-547-012

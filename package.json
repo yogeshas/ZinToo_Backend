@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "bootstrap": "^5.3.7",
+    "crypto-js": "^4.2.0",
+    "react-bootstrap": "^2.10.10",
+    "react-hook-form": "^7.62.0"
+  }
+}
