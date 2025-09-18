@@ -6,3 +6,7 @@
 *.envfirebase-service-account.json
 *firebase*
 *.json
+venv/
+*.db
+*.pyc
+__pycache__/
