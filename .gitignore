@@ -3,4 +3,4 @@
 .env.*
 !.env.example
 .env.backup
-*.env
+*.envfirebase-service-account.json
