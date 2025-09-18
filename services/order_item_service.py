@@ -11,6 +11,7 @@ from extensions import db
 from models.order import Order, OrderItem, OrderHistory
 from models.exchange import Exchange
 from models.delivery_onboarding import DeliveryOnboarding
+from models.transaction import Transaction
 
 
 def get_order_item_by_id(item_id: int) -> Optional[OrderItem]:
@@ -130,6 +131,30 @@ def cancel_individual_product(
                 item.payment_return_delivery_id = payment_id
                 item.payment_return_delivery_method = payment_method
                 print("Express pickup: Payment completed, status set to 'paid'")
+                
+                # Create transaction record for express pickup payment
+                try:
+                    Transaction.create_transaction(
+                        customer_id=customer_id,
+                        transaction_type="delivery_payment",
+                        amount=50.0,
+                        description=f"Express return pickup payment for Order #{order.order_number} - Product: {item.product_name}",
+                        reference_id=f"EXPRESS_PICKUP_{item_id}_{payment_id}",
+                        reference_type="cancellation",
+                        payment_method=payment_method,
+                        metadata={
+                            "order_id": order.id,
+                            "order_number": order.order_number,
+                            "order_item_id": item_id,
+                            "product_name": item.product_name,
+                            "pickup_type": "express",
+                            "payment_id": payment_id,
+                            "cancelled_quantity": quantity
+                        }
+                    )
+                    print(f"Transaction logged for express pickup payment: ₹50")
+                except Exception as e:
+                    print(f"Warning: Failed to log express pickup transaction: {str(e)}")
             else:
                 item.return_delivery_status = 'pending_payment'  # Payment pending
                 item.payment_return_delivery = 50.0  # ₹50 for express pickup
@@ -397,6 +422,31 @@ def admin_process_refund(
                     )
                     db.session.add(wallet_transaction)
                     print(f"[REFUND DEBUG] Wallet transaction record added")
+                    
+                    # Create main transaction record for refund
+                    try:
+                        Transaction.create_transaction(
+                            customer_id=order.customer_id,
+                            transaction_type="refund",
+                            amount=refund_amount,
+                            description=f"Refund for cancelled product: {item.product_name} - Order #{order.order_number}",
+                            reference_id=f"REFUND_{item.id}_{order.id}",
+                            reference_type="order_item",
+                            payment_method="wallet_credit",
+                            metadata={
+                                "order_id": order.id,
+                                "order_number": order.order_number,
+                                "order_item_id": item.id,
+                                "product_name": item.product_name,
+                                "refund_status": refund_status,
+                                "admin_id": admin_id,
+                                "admin_notes": admin_notes,
+                                "wallet_transaction_id": wallet_transaction.id
+                            }
+                        )
+                        print(f"[REFUND DEBUG] Main transaction record created for refund: ₹{refund_amount}")
+                    except Exception as e:
+                        print(f"[REFUND DEBUG] Warning: Failed to create main transaction record: {str(e)}")
                     
                 except Exception as e:
                     print(f"[REFUND DEBUG] Error updating customer wallet: {e}")

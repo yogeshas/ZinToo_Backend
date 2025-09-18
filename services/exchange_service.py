@@ -1,7 +1,9 @@
 from models.exchange import Exchange
 from models.delivery_onboarding import DeliveryOnboarding
+from models.delivery_auth import DeliveryGuyAuth
 from models.order import Order
 from models.product import Product
+from utils.sns_service import sns_service
 from extensions import db
 from datetime import datetime
 
@@ -96,6 +98,10 @@ def create_exchange(customer_id, order_id, original_product_id, exchange_product
         if not order_item:
             return {"error": "Order item not found"}, 404
         
+        # Validate exchange quantity doesn't exceed original quantity
+        if quantity > order_item.quantity:
+            return {"error": f"Exchange quantity ({quantity}) cannot exceed original quantity ({order_item.quantity})"}, 400
+        
         # Create exchange
         exchange = Exchange(
             customer_id=customer_id,
@@ -146,6 +152,56 @@ def get_customer_exchanges(customer_id, limit=20):
         
     except Exception as e:
         print(f"Error getting customer exchanges: {str(e)}")
+        return {"error": "Failed to get exchanges"}, 500
+
+def get_all_exchanges_for_admin(status=None, limit=50):
+    """Get all exchanges for admin panel with optional status filter"""
+    try:
+        query = Exchange.query
+        
+        if status:
+            query = query.filter_by(status=status)
+        
+        exchanges = query.order_by(Exchange.created_at.desc()).limit(limit).all()
+        
+        result = []
+        for exchange in exchanges:
+            exchange_data = exchange.to_dict()
+            
+            # Add customer information
+            if exchange.order and exchange.order.customer:
+                exchange_data['customer'] = {
+                    'id': exchange.order.customer.id,
+                    'name': exchange.order.customer.username,
+                    'email': exchange.order.customer.email,
+                    'phone': exchange.order.customer.get_phone_number()
+                }
+            
+            # Add product information
+            if exchange.product:
+                exchange_data['product'] = {
+                    'id': exchange.product.id,
+                    'name': exchange.product.pname,
+                    'image': exchange.product.image
+                }
+            
+            # Add admin information
+            if exchange.admin:
+                exchange_data['admin'] = {
+                    'id': exchange.admin.id,
+                    'name': exchange.admin.username
+                }
+            
+            result.append(exchange_data)
+        
+        return {
+            "success": True,
+            "exchanges": result,
+            "total": len(result)
+        }, 200
+        
+    except Exception as e:
+        print(f"Error getting admin exchanges: {str(e)}")
         return {"error": "Failed to get exchanges"}, 500
 
 def get_all_exchanges(limit=50):
@@ -222,8 +278,11 @@ def get_exchange_by_id(exchange_id):
         return {"error": "Failed to get exchange"}, 500
 
 def approve_exchange(exchange_id, admin_id, admin_notes=None):
-    """Approve an exchange request"""
+    """Approve an exchange request and handle inventory updates"""
     try:
+        print(f"🔍 [EXCHANGE SERVICE] Approving exchange {exchange_id} with admin_id: {admin_id}")
+        print(f"🔍 [EXCHANGE SERVICE] admin_id type: {type(admin_id)}")
+        
         exchange = Exchange.query.get(exchange_id)
         if not exchange:
             return {"error": "Exchange not found"}, 404
@@ -234,7 +293,56 @@ def approve_exchange(exchange_id, admin_id, admin_notes=None):
         if exchange.status in ["approved", "rejected"]:
             return {"error": f"Exchange is already {exchange.status} and cannot be approved"}, 400
         
+        # Get the product
+        product = Product.query.get(exchange.product_id)
+        if not product:
+            return {"error": "Product not found"}, 404
+        
+        # Handle inventory updates
+        try:
+            # Add back the old items to inventory
+            if product.colors and exchange.old_color and exchange.new_color:
+                # Color-based inventory system
+                success, message = product.add_color_size_stock(
+                    exchange.old_color, 
+                    exchange.old_size, 
+                    exchange.old_quantity
+                )
+                if not success:
+                    return {"error": f"Failed to add back old items: {message}"}, 400
+                
+                # Reserve the new items from inventory
+                success, message = product.reserve_color_size(
+                    exchange.new_color, 
+                    exchange.new_size, 
+                    exchange.new_quantity
+                )
+                if not success:
+                    # Rollback: add back the old items we just added
+                    product.add_color_size_stock(exchange.old_color, exchange.old_size, exchange.old_quantity)
+                    return {"error": f"Failed to reserve new items: {message}"}, 400
+            else:
+                # Legacy size-based inventory system
+                success, message = product.add_size_stock(exchange.old_size, exchange.old_quantity)
+                if not success:
+                    return {"error": f"Failed to add back old items: {message}"}, 400
+                
+                success, message = product.reserve_size(exchange.new_size, exchange.new_quantity)
+                if not success:
+                    # Rollback: add back the old items we just added
+                    product.add_size_stock(exchange.old_size, exchange.old_quantity)
+                    return {"error": f"Failed to reserve new items: {message}"}, 400
+            
+            print(f"✅ Inventory updated for exchange {exchange_id}")
+            
+        except Exception as inv_error:
+            print(f"❌ Inventory update failed: {str(inv_error)}")
+            return {"error": f"Inventory update failed: {str(inv_error)}"}, 500
+        
+        # Update exchange status
         exchange.status = "approved"
+        exchange.approved_by = admin_id
+        exchange.approved_at = datetime.now()
         exchange.admin_notes = admin_notes
         exchange.updated_at = datetime.now()
         
@@ -242,7 +350,7 @@ def approve_exchange(exchange_id, admin_id, admin_notes=None):
         
         return {
             "success": True,
-            "message": "Exchange approved successfully",
+            "message": "Exchange approved successfully and inventory updated",
             "exchange": exchange.to_dict()
         }, 200
         
@@ -299,6 +407,42 @@ def assign_delivery(exchange_id, delivery_guy_id):
         exchange.updated_at = datetime.now()
         
         db.session.commit()
+        
+        # Send push notification to delivery guy
+        try:
+            # Get delivery guy auth record for device token
+            auth_record = DeliveryGuyAuth.query.filter_by(delivery_guy_id=delivery_guy_id).first()
+            
+            if auth_record and auth_record.has_valid_device_token():
+                # Prepare exchange details for notification
+                exchange_details = {
+                    "id": exchange.id,
+                    "order_number": exchange.order.order_number if exchange.order else "N/A",
+                    "customer_name": exchange.customer.name if exchange.customer else "Customer",
+                    "delivery_address": exchange.delivery_address,
+                    "product_name": exchange.product.name if exchange.product else "Product",
+                    "reason": exchange.reason,
+                    "status": exchange.status,
+                    "created_at": exchange.created_at.isoformat() if exchange.created_at else None
+                }
+                
+                # Send notification
+                notification_result = sns_service.send_delivery_assignment_notification(
+                    auth_record.device_token,
+                    auth_record.platform,
+                    exchange_details
+                )
+                
+                if notification_result["success"]:
+                    print(f"✅ Push notification sent for exchange {exchange_id} to delivery guy {delivery_guy_id}")
+                else:
+                    print(f"⚠️ Failed to send push notification: {notification_result['message']}")
+            else:
+                print(f"⚠️ No valid device token found for delivery guy {delivery_guy_id}")
+                
+        except Exception as e:
+            print(f"⚠️ Error sending push notification: {str(e)}")
+            # Don't fail the assignment if notification fails
         
         return {
             "success": True,

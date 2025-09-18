@@ -83,14 +83,17 @@ def get_customer_addresses(uid):
                 {
                     "id": a.id,
                     "customer_id": a.uid,
-                    "address_line1": a.name,
-                    "address_line2": "",
+                    "name": a.name,
+                    "address_line1": a.address_line1 or "",
+                    "address_line2": a.address_line2 or "",
                     "city": a.city,
                     "state": a.state,
                     "country": a.country,
                     "postal_code": a.zip_code,
+                    "zip_code": a.zip_code,  # Keep both for compatibility
                     "type": a.type,
-                    "is_default": False,  # You can add this field to your address model
+                    "landmark": a.landmark or "",
+                    "is_default": False,
                     "created_at": a.created_at.isoformat() if hasattr(a, 'created_at') else None,
                     "updated_at": a.updated_at.isoformat() if hasattr(a, 'updated_at') else None,
                 }

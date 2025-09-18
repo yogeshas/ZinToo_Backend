@@ -7,41 +7,49 @@ from werkzeug.utils import secure_filename
 from models.widget import Widget
 from extensions import db
 from utils.crypto import encrypt_payload, decrypt_payload
+from utils.s3_service import S3Service
 
 # Image upload configuration
-UPLOAD_FOLDER = 'assets/img/widgets'
+UPLOAD_FOLDER = 'assets/img/widgets'  # Keep for backward compatibility
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
+
+# Initialize S3 service
+s3_service = S3Service()
 
 def allowed_file(filename):
     """Check if file extension is allowed"""
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def save_widget_images(files, widget_id):
-    """Save multiple widget images and return their paths"""
-    if not os.path.exists(UPLOAD_FOLDER):
-        os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-    
-    image_paths = []
+    """Save multiple widget images to S3 and return their URLs"""
+    image_urls = []
     
     for file in files:
         if file and file.filename and allowed_file(file.filename):
-            # Generate unique filename
-            file_extension = file.filename.rsplit('.', 1)[1].lower()
-            unique_filename = f"widget_{widget_id}_{uuid.uuid4().hex[:8]}.{file_extension}"
-            file_path = os.path.join(UPLOAD_FOLDER, unique_filename)
-            
-            # Save file
-            file.save(file_path)
-            
-            # Normalize to forward slashes for URL use
-            normalized_path = file_path.replace('\\', '/')
-            image_paths.append(normalized_path)
+            try:
+                # Upload to S3
+                s3_url = s3_service.upload_file(
+                    file=file,
+                    file_id=widget_id,
+                    file_type="image",
+                    folder_type="widget"
+                )
+                
+                if s3_url:
+                    image_urls.append(s3_url)
+                    print(f"✅ Widget image uploaded to S3: {s3_url}")
+                else:
+                    print(f"❌ Failed to upload widget image: {file.filename}")
+                    
+            except Exception as e:
+                print(f"❌ Error uploading widget image {file.filename}: {str(e)}")
+                # Continue with other files even if one fails
     
-    return image_paths
+    return image_urls
 
 def delete_widget_images(image_paths):
-    """Delete widget images from filesystem"""
+    """Delete widget images from S3 and local filesystem"""
     if not image_paths:
         return
     
@@ -53,13 +61,31 @@ def delete_widget_images(image_paths):
             return
     
     for image_path in image_paths:
-        # Convert to OS path
-        os_path = image_path.replace('/', os.sep)
-        if os.path.exists(os_path):
-            try:
-                os.remove(os_path)
-            except Exception as e:
-                print(f"Error deleting image {os_path}: {str(e)}")
+        if not image_path:
+            continue
+            
+        try:
+            # Check if it's an S3 URL
+            if image_path.startswith('https://') and 's3' in image_path:
+                # Extract S3 key from URL
+                s3_key = image_path.split('.com/')[-1] if '.com/' in image_path else image_path
+                
+                # Delete from S3
+                s3_service.s3_client.delete_object(
+                    Bucket=s3_service.bucket_name,
+                    Key=s3_key
+                )
+                print(f"✅ Deleted widget image from S3: {image_path}")
+                
+            else:
+                # Delete from local filesystem (backward compatibility)
+                os_path = image_path.replace('/', os.sep)
+                if os.path.exists(os_path):
+                    os.remove(os_path)
+                    print(f"✅ Deleted widget image from local: {image_path}")
+                    
+        except Exception as e:
+            print(f"❌ Error deleting widget image {image_path}: {str(e)}")
 
 def get_all_widgets():
     """Get all widgets with encryption"""

@@ -7,6 +7,12 @@ from services.order_service import (
 )
 from services.order_item_service import assign_delivery_guy_to_order_bulk
 from services.wallet_service import refund_to_wallet
+from services.exchange_service import (
+    get_all_exchanges_for_admin,
+    approve_exchange,
+    reject_exchange,
+    get_exchange_by_id
+)
 from models.delivery_onboarding import DeliveryOnboarding
 from models.order import Order
 from extensions import db
@@ -471,4 +477,105 @@ def assign_delivery_bulk(current_admin, order_id):
         
     except Exception as e:
         print(f"Error assigning delivery to order (bulk): {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+# Exchange Management Routes
+@admin_order_bp.route("/exchanges", methods=["GET"])
+@require_admin_auth
+def get_exchanges(current_admin):
+    """Get all exchanges for admin panel"""
+    try:
+        status = request.args.get('status')
+        limit = int(request.args.get('limit', 50))
+        
+        result, status_code = get_all_exchanges_for_admin(status=status, limit=limit)
+        
+        if result.get("success"):
+            # Encrypt the response
+            encrypted_data = encrypt_payload(result)
+            return jsonify({
+                "success": True,
+                "encrypted_data": encrypted_data
+            }), status_code
+        else:
+            return jsonify({"error": result.get("error", "Failed to get exchanges")}), status_code
+            
+    except Exception as e:
+        print(f"Error getting exchanges: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+@admin_order_bp.route("/exchanges/<int:exchange_id>", methods=["GET"])
+@require_admin_auth
+def get_exchange_detail(current_admin, exchange_id):
+    """Get specific exchange details for admin"""
+    try:
+        result, status_code = get_exchange_by_id(exchange_id)
+        
+        if result.get("success"):
+            # Encrypt the response
+            encrypted_data = encrypt_payload(result)
+            return jsonify({
+                "success": True,
+                "encrypted_data": encrypted_data
+            }), status_code
+        else:
+            return jsonify({"error": result.get("error", "Failed to get exchange")}), status_code
+            
+    except Exception as e:
+        print(f"Error getting exchange detail: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+@admin_order_bp.route("/exchanges/<int:exchange_id>/approve", methods=["POST"])
+@require_admin_auth
+def approve_exchange_request(current_admin, exchange_id):
+    """Approve an exchange request"""
+    try:
+        data = request.get_json()
+        admin_notes = data.get('admin_notes', '') if data else ''
+        
+        # Handle both dict and object admin formats
+        admin_id = current_admin.id if hasattr(current_admin, 'id') else current_admin.get('id')
+        print(f"🔍 [ADMIN] Approving exchange {exchange_id} with admin_id: {admin_id}")
+        print(f"🔍 [ADMIN] current_admin type: {type(current_admin)}")
+        print(f"🔍 [ADMIN] current_admin content: {current_admin}")
+        result, status_code = approve_exchange(exchange_id, admin_id, admin_notes)
+        
+        if result.get("success"):
+            # Encrypt the response
+            encrypted_data = encrypt_payload(result)
+            return jsonify({
+                "success": True,
+                "encrypted_data": encrypted_data
+            }), status_code
+        else:
+            return jsonify({"error": result.get("error", "Failed to approve exchange")}), status_code
+            
+    except Exception as e:
+        print(f"Error approving exchange: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+@admin_order_bp.route("/exchanges/<int:exchange_id>/reject", methods=["POST"])
+@require_admin_auth
+def reject_exchange_request(current_admin, exchange_id):
+    """Reject an exchange request"""
+    try:
+        data = request.get_json()
+        reason = data.get('reason', '') if data else 'No reason provided'
+        
+        # Handle both dict and object admin formats
+        admin_id = current_admin.id if hasattr(current_admin, 'id') else current_admin.get('id')
+        result, status_code = reject_exchange(exchange_id, admin_id, reason)
+        
+        if result.get("success"):
+            # Encrypt the response
+            encrypted_data = encrypt_payload(result)
+            return jsonify({
+                "success": True,
+                "encrypted_data": encrypted_data
+            }), status_code
+        else:
+            return jsonify({"error": result.get("error", "Failed to reject exchange")}), status_code
+            
+    except Exception as e:
+        print(f"Error rejecting exchange: {str(e)}")
         return jsonify({"error": "Internal server error"}), 500

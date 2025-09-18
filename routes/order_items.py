@@ -580,3 +580,108 @@ def get_available_delivery_guys_for_items(current_admin):
     except Exception as e:
         print(f"Error getting available delivery guys: {e}")
         return jsonify({"error": "Internal server error"}), 500
+
+
+@order_items_bp.route("/sales", methods=["GET"])
+def get_sales_data():
+    """
+    Get sales data for dashboard tiles
+    Query parameters:
+    - cancelled_by: Filter by cancellation status (null for non-cancelled)
+    - include_price: Include price calculations
+    - start_date: Start date for filtering (YYYY-MM-DD)
+    - end_date: End date for filtering (YYYY-MM-DD)
+    """
+    try:
+        from models.order import OrderItem
+        from sqlalchemy import func, and_
+        from datetime import datetime
+        
+        # Get query parameters
+        cancelled_by = request.args.get('cancelled_by')
+        include_price = request.args.get('include_price', 'false').lower() == 'true'
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        # Build base query
+        query = OrderItem.query
+        
+        # Filter by cancellation status
+        if cancelled_by == 'null' or cancelled_by is None:
+            query = query.filter(OrderItem.cancelled_by.is_(None))
+        elif cancelled_by:
+            query = query.filter(OrderItem.cancelled_by == cancelled_by)
+        
+        # Filter by date range
+        if start_date:
+            try:
+                start_datetime = datetime.strptime(start_date, '%Y-%m-%d')
+                query = query.filter(OrderItem.created_at >= start_datetime)
+            except ValueError:
+                return jsonify({"error": "Invalid start_date format. Use YYYY-MM-DD"}), 400
+        
+        if end_date:
+            try:
+                end_datetime = datetime.strptime(end_date, '%Y-%m-%d')
+                # Add 23:59:59 to include the entire day
+                end_datetime = end_datetime.replace(hour=23, minute=59, second=59)
+                query = query.filter(OrderItem.created_at <= end_datetime)
+            except ValueError:
+                return jsonify({"error": "Invalid end_date format. Use YYYY-MM-DD"}), 400
+        
+        # Calculate total sales
+        if include_price:
+            # Sum of total_price for all matching order items
+            total_sales = query.with_entities(func.sum(OrderItem.total_price)).scalar() or 0
+        else:
+            # Count of order items
+            total_sales = query.count()
+        
+        # Get additional statistics
+        total_items = query.count()
+        
+        # Get breakdown by status
+        status_breakdown = query.with_entities(
+            OrderItem.status,
+            func.count(OrderItem.id).label('count'),
+            func.sum(OrderItem.total_price).label('total_value')
+        ).group_by(OrderItem.status).all()
+        
+        # Get recent orders (last 10)
+        recent_orders = query.order_by(OrderItem.created_at.desc()).limit(10).all()
+        
+        return jsonify({
+            "success": True,
+            "total_sales": float(total_sales) if include_price else total_sales,
+            "total_items": total_items,
+            "status_breakdown": [
+                {
+                    "status": item.status,
+                    "count": item.count,
+                    "total_value": float(item.total_value) if item.total_value else 0
+                }
+                for item in status_breakdown
+            ],
+            "recent_orders": [
+                {
+                    "id": item.id,
+                    "product_name": item.product_name,
+                    "quantity": item.quantity,
+                    "unit_price": float(item.unit_price),
+                    "total_price": float(item.total_price),
+                    "status": item.status,
+                    "created_at": item.created_at.isoformat() if item.created_at else None
+                }
+                for item in recent_orders
+            ],
+            "filters_applied": {
+                "cancelled_by": cancelled_by,
+                "include_price": include_price,
+                "start_date": start_date,
+                "end_date": end_date
+            }
+        })
+        
+    except Exception as e:
+        print(f"Error getting sales data: {e}")
+        return jsonify({"error": "Internal server error", "details": str(e)}), 500

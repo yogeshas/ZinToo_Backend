@@ -5,6 +5,10 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:http/http.dart' as http;
 import 'models/order_models.dart';
 import 'api_service_5_tabs.dart';
 
@@ -26,7 +30,7 @@ class _ViewOrdersScreen5TabsState extends State<ViewOrdersScreen5Tabs>
   final ScrollController _scrollController = ScrollController();
 
   // Base URL for backend images
-  final String _baseUrl = 'http://127.0.0.1:5000';
+  final String _baseUrl = 'http://172.31.31.194:5000';
 
   // Tab management
   late TabController _tabController;
@@ -52,9 +56,18 @@ class _ViewOrdersScreen5TabsState extends State<ViewOrdersScreen5Tabs>
   final ImagePicker _imagePicker = ImagePicker();
   Map<int, bool> _deliverySliders = {}; // Track slider state for each item
 
+  // Barcode scanning and verification
+  String? _scannedBarcode;
+  bool _isVerifyingBarcode = false;
+  Map<int, bool> _barcodeVerified = {}; // Track verification status for each item
+  Map<int, Map<String, dynamic>> _productImages = {}; // Store captured product images
+
   @override
   void initState() {
     super.initState();
+    // Initialize barcode verification state
+    _barcodeVerified.clear();
+    _productImages.clear();
     _tabController = TabController(length: 5, vsync: this);
     _tabController.addListener(_onTabChanged);
     _loadData();
@@ -88,6 +101,9 @@ class _ViewOrdersScreen5TabsState extends State<ViewOrdersScreen5Tabs>
     setState(() {
       _isLoading = true;
       _errorMessage = null;
+      // Reset barcode verification state when reloading data
+      _barcodeVerified.clear();
+      _productImages.clear();
     });
 
     try {
@@ -130,6 +146,10 @@ class _ViewOrdersScreen5TabsState extends State<ViewOrdersScreen5Tabs>
         print("🔍 DEBUG: Orders loaded: ${response['orders']?.length ?? 0} orders");
         for (var order in response['orders'] ?? []) {
           print("🔍 DEBUG: Order - ID: ${order['id']}, Status: '${order['status']}'");
+          print("🔍 DEBUG: Order items count: ${order['order_items']?.length ?? 0}");
+          if (order['order_items'] != null && order['order_items'].isNotEmpty) {
+            print("🔍 DEBUG: First order item: ${order['order_items'][0]}");
+          }
         }
         setState(() {
           _orders = response['orders'] ?? [];
@@ -164,7 +184,8 @@ class _ViewOrdersScreen5TabsState extends State<ViewOrdersScreen5Tabs>
         final assignedExchanges = allExchanges.where((exchange) {
           String status = exchange['status']?.toString().toLowerCase() ?? '';
           print("🔍 DEBUG: Checking exchange ${exchange['id']} with status '$status'");
-          return status == 'assigned';
+          // Show exchanges that are assigned, approved, or out for delivery
+          return ['assigned', 'approved', 'out_for_delivery', 'delivered'].contains(status);
         }).toList();
 
         print("🔍 DEBUG: Assigned exchanges count: ${assignedExchanges.length}");
@@ -456,49 +477,108 @@ class _ViewOrdersScreen5TabsState extends State<ViewOrdersScreen5Tabs>
   Widget _buildItemCard(dynamic item, String itemType) {
     final isExpanded = _expandedItems[item['id']] ?? false;
 
-    // Debug logging for item data
-    print("🔍 DEBUG: Building item card for ID: ${item['id']}, Type: $itemType");
-    print("🔍 DEBUG: Item customer data: ${item['customer']}");
-    print("🔍 DEBUG: Item order data: ${item['order']}");
-
     return Card(
       color: Colors.white,
-      margin: EdgeInsets.only(bottom: 16),
-      elevation: 4,
+      margin: EdgeInsets.only(bottom: 12),
+      elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Column(
         children: [
-          // Header with ID and Status
+          // Main Order Row - Clean Single Row Design
           Container(
             padding: EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white, // Optional background color
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(12),
-                topRight: Radius.circular(12),
-              ),
-              border: Border.all(
-                color: Colors.grey, // Border color
-                width: 1,           // Border width
-              ),
-
-            ),
             child: Row(
               children: [
+                // Product Image
+                Container(
+                  width: 60,
+                  height: 60,
+            decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey[300]!, width: 1),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: _buildProductImage(item, itemType),
+                  ),
+                ),
+                SizedBox(width: 12),
+                
+                // Order Details
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Order ID and Status
+                      Row(
+                    children: [
                       Text(
                         '${_getItemTypeDisplay(itemType)} #${_getOrderNumber(item, itemType)}',
                         style: TextStyle(
-                          fontSize: 14,
+                              fontSize: 16,
                           fontWeight: FontWeight.bold,
                           color: Colors.blue[800],
                         ),
+                          ),
+                          Spacer(),
+                          Container(
+                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: _getStatusColor(item['status']).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: _getStatusColor(item['status']),
+                                width: 1,
+                              ),
+                            ),
+                            child: Text(
+                              item['status']?.toString().toUpperCase() ?? 'UNKNOWN',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: _getStatusColor(item['status']),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                       SizedBox(height: 4),
-                      if (item['total_amount'] != null)
+                      
+                      // Product Name
+                      Text(
+                        _getProductName(item, itemType),
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey[800],
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      SizedBox(height: 4),
+                      
+                      // Product Details Row
+                      _buildProductDetailsRow(item, itemType),
+                      
+                      SizedBox(height: 8),
+                      
+                      // Customer and Amount Row
+                      Row(
+                        children: [
+                          Icon(Icons.person, size: 14, color: Colors.grey[600]),
+                          SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              _getCustomerName(item, itemType),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (item['total_amount'] != null) ...[
                         Text(
                           '₹${item['total_amount'].toStringAsFixed(2)}',
                           style: TextStyle(
@@ -507,77 +587,242 @@ class _ViewOrdersScreen5TabsState extends State<ViewOrdersScreen5Tabs>
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: _getStatusColor(item['status']),
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: _getStatusColor(item['status']).withOpacity(0.3),
-                        blurRadius: 4,
-                        offset: Offset(0, 2),
+                          ],
+                        ],
                       ),
                     ],
                   ),
-                  child: Text(
-                    item['status']?.toString().toUpperCase() ?? 'UNKNOWN',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-
                 ),
+                
+                // Action Button
+                Column(
+                  children: [
+                    IconButton(
+                      onPressed: () {
+                        setState(() {
+                          _expandedItems[item['id']] = !isExpanded;
+                        });
+                      },
+                      icon: Icon(
+                        isExpanded ? Icons.expand_less : Icons.expand_more,
+                        color: Colors.blue[600],
+                      ),
+                    ),
+                    if (item['customer']?['phone'] != null)
+                      IconButton(
+                        onPressed: () => _makePhoneCall(item['customer']['phone']),
+                        icon: Icon(Icons.phone, color: Colors.green[600], size: 20),
+                        tooltip: 'Call Customer',
+                      ),
+                    ],
+                  ),
               ],
             ),
           ),
-          Row(
-            children: [
-              // Expand/Collapse Button
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () => _toggleItemExpansion(item['id']),
-                  icon: Icon(isExpanded ? Icons.expand_less : Icons.expand_more),
-                  label: Text(isExpanded ? 'Less Details' : 'More Details'),
-                  style: OutlinedButton.styleFrom(
-                    side: BorderSide.none, // No border at all!
-                    foregroundColor: Colors.blue, // Your text/icon color
-                  ),
-                ),
-              ),
-
-              SizedBox(width: 8),
-
-              // Action buttons will only show in expanded details
-
-            ],
-          ),
-          // Customer Information Section
-
-
-          // Expanded Details
+          
+          // Expanded Details Section
           if (isExpanded)
             Container(
-              padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Divider(color: Colors.grey[300]),
-                  SizedBox(height: 16),
-                  _buildExpandedDetails(item, itemType),
-                ],
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.only(
+                  bottomLeft: Radius.circular(12),
+                  bottomRight: Radius.circular(12),
+                ),
               ),
+              child: _buildExpandedDetails(item, itemType),
             ),
         ],
       ),
     );
   }
 
+  // Build product details row for main card display
+  Widget _buildProductDetailsRow(dynamic item, String itemType) {
+    List<Widget> details = [];
+    
+    // Get product information based on item type
+    String? productName;
+    String? barcode;
+    int? quantity;
+    String? color;
+    String? size;
+    double? price;
+
+    if (itemType == 'orders') {
+      if (item['order_items'] != null && item['order_items'].isNotEmpty) {
+        final orderItem = item['order_items'][0];
+        productName = orderItem?['product']?['name'];
+        barcode = orderItem?['product']?['barcode'];
+        quantity = orderItem?['quantity'];
+        color = orderItem?['color'];
+        size = orderItem?['size'];
+        price = orderItem?['product']?['price']?.toDouble();
+      }
+    } else if (itemType == 'exchanges') {
+      if (item['exchange_product'] != null) {
+        productName = item['exchange_product']['name'];
+        barcode = item['exchange_product']['barcode'];
+        quantity = 1;
+        color = item['exchange_product']['color'];
+        size = item['exchange_product']['size'];
+        price = item['exchange_product']['price']?.toDouble();
+      } else if (item['original_product'] != null) {
+        productName = item['original_product']['name'];
+        barcode = item['original_product']['barcode'];
+        quantity = 1;
+        color = item['original_product']['color'];
+        size = item['original_product']['size'];
+        price = item['original_product']['price']?.toDouble();
+      }
+    } else if (itemType == 'cancelled_items') {
+      if (item['product'] != null) {
+        productName = item['product']['name'];
+        barcode = item['product']['barcode'];
+        quantity = item['quantity'];
+        color = item['color'];
+        size = item['size'];
+        price = item['product']['price']?.toDouble();
+      }
+    }
+
+    // Add quantity
+    if (quantity != null) {
+      details.add(
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: Colors.blue[100],
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            'Qty: $quantity',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              color: Colors.blue[800],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Add color
+    if (color != null && color.isNotEmpty) {
+      details.add(
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: _getColorFromString(color).withOpacity(0.2),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: _getColorFromString(color), width: 1),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: _getColorFromString(color),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              SizedBox(width: 4),
+              Text(
+                color.toUpperCase(),
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: _getColorFromString(color),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Add size
+    if (size != null && size.isNotEmpty) {
+      details.add(
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: Colors.grey[100],
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey[400]!, width: 1),
+          ),
+          child: Text(
+            'Size: $size',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey[700],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Add price
+    if (price != null) {
+      details.add(
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: Colors.green[100],
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.green[400]!, width: 1),
+          ),
+          child: Text(
+            '₹${price.toStringAsFixed(0)}',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              color: Colors.green[700],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Special handling for cancelled items
+    if (itemType == 'cancelled_items') {
+      details.add(
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: Colors.red[100],
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.red[400]!, width: 1),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.cancel, size: 10, color: Colors.red[600]),
+              SizedBox(width: 2),
+              Text(
+                'CANCELLED',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red[700],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Wrap(
+      spacing: 4,
+      runSpacing: 4,
+      children: details,
+    );
+  }
 
   // Helper function to check status with multiple case variations
   bool _isStatus(dynamic item, List<String> statuses) {
@@ -731,9 +976,46 @@ class _ViewOrdersScreen5TabsState extends State<ViewOrdersScreen5Tabs>
     return Container(
       padding: EdgeInsets.all(16),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Customer Name and Photo
-          Row(
+          // Customer Information Section
+          _buildCustomerSection(item, itemType),
+          
+          SizedBox(height: 16),
+          
+          // Address Section
+          _buildAddressSection(item),
+          
+          SizedBox(height: 16),
+          
+          // Product Details Section - Enhanced
+          _buildEnhancedProductSection(item, itemType),
+          
+          SizedBox(height: 16),
+          
+          // OTP Section (for orders and exchanges)
+          if (itemType == 'orders' || itemType == 'exchanges')
+            _buildOTPSection(item, itemType),
+          
+          SizedBox(height: 16),
+          
+          // Action Buttons Section
+          _buildActionButtonsSection(item, itemType),
+        ],
+      ),
+    );
+  }
+
+  // Build customer section with photo and contact
+  Widget _buildCustomerSection(dynamic item, String itemType) {
+    return Container(
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.blue[50],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.blue[200]!, width: 1),
+      ),
+      child: Row(
             children: [
               // Customer Photo
               Container(
@@ -748,7 +1030,8 @@ class _ViewOrdersScreen5TabsState extends State<ViewOrdersScreen5Tabs>
                 ),
               ),
               SizedBox(width: 12),
-              // Customer Name
+          
+          // Customer Info
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -761,10 +1044,20 @@ class _ViewOrdersScreen5TabsState extends State<ViewOrdersScreen5Tabs>
                         color: Colors.grey[800],
                       ),
                     ),
-
+                if (item['customer']?['phone'] != null) ...[
+                  SizedBox(height: 4),
+                  Text(
+                    item['customer']['phone'],
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
                   ],
                 ),
               ),
+          
               // Call Button
               if (item['customer']?['phone'] != null)
                 Container(
@@ -780,72 +1073,360 @@ class _ViewOrdersScreen5TabsState extends State<ViewOrdersScreen5Tabs>
                     ],
                   ),
                   child: IconButton(
-                    icon: Icon(Icons.phone, color: Colors.white),
+                icon: Icon(Icons.phone, color: Colors.white, size: 20),
                     onPressed: () => _makePhoneCall(item['customer']['phone']),
                     tooltip: 'Call Customer',
                   ),
                 ),
             ],
           ),
+    );
+  }
 
-          SizedBox(height: 16),
+  // Build enhanced product section with better layout
+  Widget _buildEnhancedProductSection(dynamic item, String itemType) {
+    return Container(
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey[300]!, width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.inventory, color: Colors.blue[600], size: 20),
+              SizedBox(width: 8),
+              Text(
+                'Product Details',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue[800],
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 12),
+          
+          // Product Image and Basic Info
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Product Image
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey[300]!, width: 1),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: _buildProductImage(item, itemType),
+                ),
+              ),
+              SizedBox(width: 12),
+              
+              // Product Information
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _getProductName(item, itemType),
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey[800],
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    
+                    // Product Details Grid
+                    _buildProductDetailsGrid(item, itemType),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          
+          // Special sections for different item types
+          if (itemType == 'cancelled_items') ...[
+            SizedBox(height: 12),
+            _buildCancelledItemDetails(item),
+          ],
+          
+          if (itemType == 'exchanges') ...[
+            SizedBox(height: 12),
+            _buildExchangeItemDetails(item),
+          ],
+        ],
+      ),
+    );
+  }
 
-          // Address Section
-          _buildAddressSection(item),
+  // Build product details in a clean grid format
+  Widget _buildProductDetailsGrid(dynamic item, String itemType) {
+    List<Map<String, dynamic>> details = [];
+    
+    // Get product information
+    int? quantity;
+    String? color;
+    String? size;
+    double? price;
+    String? barcode;
 
-          SizedBox(height: 16),
+    if (itemType == 'orders') {
+      if (item['order_items'] != null && item['order_items'].isNotEmpty) {
+        final orderItem = item['order_items'][0];
+        quantity = orderItem?['quantity'];
+        color = orderItem?['color'];
+        size = orderItem?['size'];
+        price = orderItem?['product']?['price']?.toDouble();
+        barcode = orderItem?['product']?['barcode'];
+      }
+    } else if (itemType == 'exchanges') {
+      if (item['exchange_product'] != null) {
+        quantity = 1;
+        color = item['exchange_product']['color'];
+        size = item['exchange_product']['size'];
+        price = item['exchange_product']['price']?.toDouble();
+        barcode = item['exchange_product']['barcode'];
+      }
+    } else if (itemType == 'cancelled_items') {
+      quantity = item['quantity'];
+      color = item['color'];
+      size = item['size'];
+      price = item['product']?['price']?.toDouble();
+      barcode = item['product']?['barcode'];
+    }
 
-          // Product Information Section
-          _buildProductInfoSection(item, itemType),
+    // Add details to list
+    if (quantity != null) {
+      details.add({'label': 'Quantity', 'value': quantity.toString(), 'icon': Icons.shopping_cart});
+    }
+    if (color != null && color.isNotEmpty) {
+      details.add({'label': 'Color', 'value': color, 'icon': Icons.palette});
+    }
+    if (size != null && size.isNotEmpty) {
+      details.add({'label': 'Size', 'value': size, 'icon': Icons.straighten});
+    }
+    if (price != null) {
+      details.add({'label': 'Price', 'value': '₹${price.toStringAsFixed(0)}', 'icon': Icons.attach_money});
+    }
+    if (barcode != null && barcode.isNotEmpty) {
+      details.add({'label': 'Barcode', 'value': barcode, 'icon': Icons.qr_code});
+    }
 
-          SizedBox(height: 16),
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: details.map((detail) => _buildDetailChip(detail)).toList(),
+    );
+  }
 
-          // OTP Section (for orders and exchanges)
-          if (itemType == 'orders' || itemType == 'exchanges')
-            _buildOTPSection(item, itemType),
-
-          SizedBox(height: 16),
-
-          // DELIVERY ACTIONS SECTION
-          Container(
-            padding: EdgeInsets.all(16),
+  // Build individual detail chip
+  Widget _buildDetailChip(Map<String, dynamic> detail) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: Colors.blue[50],
+        color: Colors.blue[100],
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.blue[300]!, width: 2),
+        border: Border.all(color: Colors.blue[300]!, width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(detail['icon'], size: 12, color: Colors.blue[700]),
+          SizedBox(width: 4),
+          Text(
+            '${detail['label']}: ${detail['value']}',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: Colors.blue[800],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Build cancelled item specific details
+  Widget _buildCancelledItemDetails(dynamic item) {
+    return Container(
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.red[50],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.red[200]!, width: 1),
             ),
             child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    Icon(Icons.delivery_dining, color: Colors.blue[700], size: 24),
+              Icon(Icons.cancel, color: Colors.red[600], size: 18),
+              SizedBox(width: 6),
+              Text(
+                'Cancelled Item - Return to Warehouse',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red[700],
+                ),
+              ),
+            ],
+          ),
+          if (item['reason'] != null) ...[
+            SizedBox(height: 8),
+            Text(
+              'Reason: ${item['reason']}',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.red[600],
+              ),
+            ),
+          ],
+          SizedBox(height: 8),
+          Text(
+            'This item needs to be returned to the warehouse. Please collect it from the customer and return it.',
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.red[600],
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Build exchange item specific details
+  Widget _buildExchangeItemDetails(dynamic item) {
+    return Container(
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange[50],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.orange[200]!, width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.swap_horiz, color: Colors.orange[600], size: 18),
+              SizedBox(width: 6),
+              Text(
+                'Exchange Details',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.orange[700],
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 8),
+          
+          // Original Product
+          if (item['original_product'] != null) ...[
+            Text(
+              'Original Product:',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.orange[700],
+              ),
+            ),
+            SizedBox(height: 4),
+            Text(
+              '${item['original_product']['name']} (${item['original_product']['color'] ?? 'N/A'} - ${item['original_product']['size'] ?? 'N/A'})',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.orange[600],
+              ),
+            ),
+            SizedBox(height: 8),
+          ],
+          
+          // Exchange Product
+          if (item['exchange_product'] != null) ...[
+            Text(
+              'New Product:',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.orange[700],
+              ),
+            ),
+            SizedBox(height: 4),
+            Text(
+              '${item['exchange_product']['name']} (${item['exchange_product']['color'] ?? 'N/A'} - ${item['exchange_product']['size'] ?? 'N/A'})',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.orange[600],
+              ),
+            ),
+          ],
+          
+          if (item['reason'] != null) ...[
+            SizedBox(height: 8),
+            Text(
+              'Reason: ${item['reason']}',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.orange[600],
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // Build action buttons section
+  Widget _buildActionButtonsSection(dynamic item, String itemType) {
+    return Container(
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.green[50],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.green[200]!, width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.delivery_dining, color: Colors.green[700], size: 20),
                     SizedBox(width: 8),
                     Text(
                       'Delivery Actions',
                       style: TextStyle(
-                        fontSize: 18,
+                  fontSize: 16,
                         fontWeight: FontWeight.bold,
-                        color: Colors.blue[800],
+                  color: Colors.green[800],
                       ),
                     ),
                   ],
                 ),
-                SizedBox(height: 16),
+          SizedBox(height: 12),
 
-                // Action Buttons - DELIVERY BUTTON
+          // Action Buttons
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
                   children: _buildActionButtons(item, itemType),
                 ),
-              ],
-            ),
-          ),
-
         ],
       ),
     );
-
   }
 
   Widget _buildOrderExpandedDetails(dynamic order) {
@@ -1217,9 +1798,9 @@ class _ViewOrdersScreen5TabsState extends State<ViewOrdersScreen5Tabs>
 
     if (itemType == 'orders') {
       if (item['order_items'] != null && item['order_items'].isNotEmpty) {
-        productName = item['order_items'][0]['product']?['name'];
-        barcode = item['order_items'][0]['product']?['barcode'];
-        quantity = item['order_items'][0]['quantity'];
+        productName = item['order_items'][0]?['product']?['name'];
+        barcode = item['order_items'][0]?['product']?['barcode'];
+        quantity = item['order_items'][0]?['quantity'];
       }
     } else if (itemType == 'exchanges') {
       if (item['exchange_product'] != null) {
@@ -1264,7 +1845,7 @@ class _ViewOrdersScreen5TabsState extends State<ViewOrdersScreen5Tabs>
           ),
           SizedBox(height: 8),
 
-          // Product Information
+          // Product Information with Image
           if (productName != null) ...[
             Container(
               width: double.infinity,
@@ -1274,45 +1855,507 @@ class _ViewOrdersScreen5TabsState extends State<ViewOrdersScreen5Tabs>
                 borderRadius: BorderRadius.circular(6),
                 border: Border.all(color: Colors.grey[300]!),
               ),
-              child: Column(
+              child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    productName,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey[800],
+                  // Product Image on the left
+                  Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey[300]!),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: _buildProductImage(item, itemType),
                     ),
                   ),
-                  if (quantity != null) ...[
-                    SizedBox(height: 4),
-                    Text(
-                      'Quantity: $quantity',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                      ),
+                  SizedBox(width: 12),
+                  // Product Details on the right
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          productName,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey[800],
+                          ),
+                        ),
+                        if (quantity != null) ...[
+                          SizedBox(height: 4),
+                          Text(
+                            'Quantity: $quantity',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                        // Price information
+                        if (_getProductPrice(item, itemType) != null) ...[
+                          SizedBox(height: 4),
+                          Text(
+                            'Price: ₹${_getProductPrice(item, itemType)}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.green[700],
+                            ),
+                          ),
+                        ],
+                        // Color selection if available
+                        if (item['color'] != null) ...[
+                          SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Text(
+                                'Color: ',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                              Container(
+                                width: 16,
+                                height: 16,
+                                decoration: BoxDecoration(
+                                  color: _getColorFromString(item['color']),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.grey[400]!),
+                                ),
+                              ),
+                              SizedBox(width: 4),
+                              Text(
+                                item['color'],
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                        // Size if available
+                        if (item['size'] != null) ...[
+                          SizedBox(height: 4),
+                          Text(
+                            'Size: ${item['size']}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                        // Special handling for cancelled items
+                        if (itemType == 'cancelled_items') ...[
+                          SizedBox(height: 8),
+                          Container(
+                            padding: EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.red[50],
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.red[200]!),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(Icons.cancel, color: Colors.red[600], size: 18),
+                                    SizedBox(width: 6),
+                                    Text(
+                                      'Cancelled Item',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.red[700],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (item['reason'] != null) ...[
+                                  SizedBox(height: 6),
+                                  Container(
+                                    padding: EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: Colors.red[100]!),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Cancellation Reason:',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.red[700],
+                                          ),
+                                        ),
+                                        SizedBox(height: 2),
+                                        Text(
+                                          item['reason'],
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.red[600],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                                if (item['cancelled_at'] != null) ...[
+                                  SizedBox(height: 6),
+                                  Row(
+                                    children: [
+                                      Icon(Icons.access_time, color: Colors.red[500], size: 14),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        'Cancelled: ${item['cancelled_at']}',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.red[500],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                                // Show quantity and total value
+                                if (item['quantity'] != null && item['product'] != null && item['product']['price'] != null) ...[
+                                  SizedBox(height: 6),
+                                  Container(
+                                    padding: EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: Colors.red[100]!),
+                                    ),
+                                    child: Column(
+                                      children: [
+                                        Row(
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Text(
+                                              'Quantity: ${item['quantity']}',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.red[700],
+                                              ),
+                                            ),
+                                            Text(
+                                              'Value: ₹${(item['quantity'] * item['product']['price']).toStringAsFixed(2)}',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.red[700],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                                // Additional payment information
+                                if (item['additional_payment_required'] == true) ...[
+                                  SizedBox(height: 8),
+                                  Container(
+                                    padding: EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blue[50],
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: Colors.blue[200]!),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.payment, color: Colors.blue[600], size: 16),
+                                        SizedBox(width: 6),
+                                        Text(
+                                          'Additional Payment Required: ₹${item['additional_amount']?.toStringAsFixed(2) ?? '0.00'}',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.blue[700],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                        // Special handling for exchange items
+                        if (itemType == 'exchanges') ...[
+                          SizedBox(height: 50),
+                          Container(
+                            padding: EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch, // make containers full width
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(Icons.swap_horiz, color: Colors.orange[600], size: 18),
+                                    SizedBox(width: 6),
+                                    Text(
+                                      'Exchange Request',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.orange[700],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                SizedBox(height: 14),
+                                // FROM container
+                                Container(
+                                  padding: EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red[50],
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: Colors.red[200]!),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'FROM (Return)',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.red[700],
+                                        ),
+                                      ),
+                                      SizedBox(height: 4),
+                                      if (item['original_product'] != null) ...[
+                                        Text(
+                                          item['original_product']['name'] ?? 'Unknown Product',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.red[600],
+                                          ),
+                                        ),
+                                        if (item['original_product']['price'] != null) ...[
+                                          SizedBox(height: 2),
+                                          Text(
+                                            '₹${item['original_product']['price']}',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: Colors.red[600],
+                                            ),
+                                          ),
+                                        ],
+                                        if (item['original_product']['color'] != null) ...[
+                                          SizedBox(height: 2),
+                                          Row(
+                                            children: [
+                                              Container(
+                                                width: 12,
+                                                height: 12,
+                                                decoration: BoxDecoration(
+                                                  color: _getColorFromString(item['original_product']['color']),
+                                                  shape: BoxShape.circle,
+                                                  border: Border.all(color: Colors.grey[400]!),
+                                                ),
+                                              ),
+                                              SizedBox(width: 4),
+                                              Text(
+                                                item['original_product']['color'],
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  color: Colors.red[600],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                        if (item['original_product']['size'] != null) ...[
+                                          SizedBox(height: 2),
+                                          Text(
+                                            'Size: ${item['original_product']['size']}',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: Colors.red[600],
+                                            ),
+                                          ),
+                                        ],
+                                        if (item['old_quantity'] != null) ...[
+                                          SizedBox(height: 2),
+                                          Text(
+                                            'Qty: ${item['old_quantity']}',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: Colors.red[600],
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                                SizedBox(height: 12),
+                                // Arrow row indicating exchange direction
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.arrow_downward, color: Colors.orange[600], size: 24),
+                                  ],
+                                ),
+                                SizedBox(height: 12),
+                                // TO container
+                                Container(
+                                  padding: EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green[50],
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: Colors.green[200]!),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'TO (New)',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.green[700],
+                                        ),
+                                      ),
+                                      SizedBox(height: 4),
+                                      if (item['exchange_product'] != null) ...[
+                                        Text(
+                                          item['exchange_product']['name'] ?? 'Unknown Product',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.green[600],
+                                          ),
+                                        ),
+                                        if (item['exchange_product']['price'] != null) ...[
+                                          SizedBox(height: 2),
+                                          Text(
+                                            '₹${item['exchange_product']['price']}',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: Colors.green[600],
+                                            ),
+                                          ),
+                                        ],
+                                        if (item['exchange_product']['color'] != null) ...[
+                                          SizedBox(height: 2),
+                                          Row(
+                                            children: [
+                                              Container(
+                                                width: 12,
+                                                height: 12,
+                                                decoration: BoxDecoration(
+                                                  color: _getColorFromString(item['exchange_product']['color']),
+                                                  shape: BoxShape.circle,
+                                                  border: Border.all(color: Colors.grey[400]!),
+                                                ),
+                                              ),
+                                              SizedBox(width: 4),
+                                              Text(
+                                                item['exchange_product']['color'],
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  color: Colors.green[600],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                        if (item['exchange_product']['size'] != null) ...[
+                                          SizedBox(height: 2),
+                                          Text(
+                                            'Size: ${item['exchange_product']['size']}',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: Colors.green[600],
+                                            ),
+                                          ),
+                                        ],
+                                        if (item['new_quantity'] != null) ...[
+                                          SizedBox(height: 2),
+                                          Text(
+                                            'Qty: ${item['new_quantity']}',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: Colors.green[600],
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+
+                        // Action buttons
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          children: [
+                            ElevatedButton.icon(
+                              onPressed: () => _printProductImage(item, itemType),
+                              icon: Icon(Icons.print, size: 16),
+                              label: Text('Print Image', style: TextStyle(fontSize: 12)),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue[600],
+                                foregroundColor: Colors.white,
+                                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                minimumSize: Size(0, 32),
+                              ),
+                            ),
+                            ElevatedButton.icon(
+                              onPressed: () => _scanBarcodeForProduct(item, itemType),
+                              icon: Icon(Icons.camera_alt, size: 16),
+                              label: Text('Capture Image', style: TextStyle(fontSize: 12)),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green[600],
+                                foregroundColor: Colors.white,
+                                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                minimumSize: Size(0, 32),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (_barcodeVerified[item['id']] == true) ...[
+                          SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Icon(Icons.check_circle, color: Colors.green, size: 16),
+                              SizedBox(width: 4),
+                              Text(
+                                'Product Image Captured',
+                                style: TextStyle(
+                                  color: Colors.green[700],
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
                     ),
-                  ],
-                  if (barcode != null) ...[
-                    SizedBox(height: 4),
-                    Text(
-                      'Barcode: $barcode',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.blue[600],
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
+                  ),
                 ],
               ),
             ),
-            SizedBox(height: 8),
           ],
-
-          // Product details shown above
         ],
       ),
     );
@@ -1944,40 +2987,197 @@ class _ViewOrdersScreen5TabsState extends State<ViewOrdersScreen5Tabs>
   Widget _buildDeliverySlider(dynamic item, String itemType) {
     final itemId = item['id'];
     final isDelivered = _deliverySliders[itemId] ?? false;
-    
+    final isBarcodeVerified = _barcodeVerified[itemId] ?? false;
+
+    // Check if item has a valid barcode for verification
+    final barcode = _getProductBarcode(item, itemType);
+    final hasValidBarcode = barcode != 'N/A' && barcode.isNotEmpty;
+
     // Different text for cancelled items
     String buttonText = isDelivered ? 'Returned!' : 'Mark as Delivered';
     if (itemType == 'cancelled_items') {
       buttonText = isDelivered ? 'Returned!' : 'Mark as Returned';
     }
 
-    return ElevatedButton.icon(
-      onPressed: isDelivered ? null : () => _onDeliveryButtonPressed(item, itemType),
-      icon: Icon(isDelivered ? Icons.check : Icons.assignment_returned, size: 16),
-      label: Text(buttonText),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: isDelivered ? Colors.green : Colors.orange,
-        foregroundColor: Colors.white,
-        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
+    return Row(
+      children: [
+        // Barcode Scan Button
+        ElevatedButton.icon(
+          onPressed: (isDelivered || !hasValidBarcode) ? null : () => _scanBarcodeForProduct(item, itemType),
+          icon: Icon(isBarcodeVerified ? Icons.check_circle : Icons.camera_alt, size: 16),
+          label: Text(isBarcodeVerified ? 'Verified' : 'Capture Image'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: isBarcodeVerified ? Colors.green : Colors.blue,
+            foregroundColor: Colors.white,
+            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
         ),
-      ),
+        SizedBox(width: 8),
+        // Delivery Button (only enabled after barcode verification)
+        Expanded(
+          child: Tooltip(
+            message: !hasValidBarcode ? 'Product barcode not available' :
+            !isBarcodeVerified ? 'Scan barcode first to enable delivery' :
+            isDelivered ? 'Already delivered' : 'Click to deliver',
+            child: ElevatedButton.icon(
+              onPressed: (isDelivered || !hasValidBarcode || !isBarcodeVerified) ? null : () => _onDeliveryButtonPressed(item, itemType),
+              icon: Icon(isDelivered ? Icons.check : Icons.assignment_returned, size: 16),
+              label: Text(buttonText),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: isDelivered ? Colors.green :
+                !isBarcodeVerified ? Colors.grey : Colors.orange,
+                foregroundColor: Colors.white,
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
   // Handle delivery button press (only for out_for_delivery items)
   Future<void> _onDeliveryButtonPressed(dynamic item, String itemType) async {
-    // Show photo upload dialog (which will auto-take photo and show OTP verification)
-    final otpVerified = await _showPhotoUploadDialog(item, itemType);
-
-    // If OTP is verified, mark as delivered
-    if (otpVerified == true) {
-      await _markAsDelivered(item, itemType);
-      setState(() {
-        _deliverySliders[item['id']] = true;
-      });
+    // Only proceed if product image is captured (replaces barcode verification)
+    if (_barcodeVerified[item['id']] == true && _productImages.containsKey(item['id'])) {
+      final otpVerified = await _showPhotoUploadDialog(item, itemType);
+      if (otpVerified == true) {
+        await _markAsDelivered(item, itemType);
+        setState(() {
+          _deliverySliders[item['id']] = true;
+        });
+      }
+    } else {
+      _showErrorSnackBar('Please scan barcode first before delivering');
     }
+  }
+
+  // Show delivery verification flow dialog
+  Future<bool> _showDeliveryVerificationDialog(dynamic item, String itemType) async {
+    return await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.local_shipping, color: Colors.blue),
+            SizedBox(width: 8),
+            Text('Delivery Verification Process'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'To complete the delivery, you need to verify the product:',
+              style: TextStyle(fontWeight: FontWeight.w500),
+            ),
+            SizedBox(height: 16),
+
+            // Product Information
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue[200]!),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Product: ${_getProductName(item, itemType)}',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Barcode: ${_getProductBarcode(item, itemType)}',
+                    style: TextStyle(color: Colors.blue[700], fontFamily: 'monospace'),
+                  ),
+                ],
+              ),
+            ),
+
+            SizedBox(height: 16),
+
+            // Verification Steps
+            Text('Verification Steps:', style: TextStyle(fontWeight: FontWeight.w500)),
+            SizedBox(height: 8),
+
+            Row(
+              children: [
+                Icon(Icons.camera_alt, color: Colors.green, size: 20),
+                SizedBox(width: 8),
+                Expanded(child: Text('1. Take photo of the product')),
+              ],
+            ),
+            SizedBox(height: 4),
+
+            Row(
+              children: [
+                Icon(Icons.qr_code_scanner, color: Colors.orange, size: 20),
+                SizedBox(width: 8),
+                Expanded(child: Text('2. Scan product barcode for verification')),
+              ],
+            ),
+            SizedBox(height: 4),
+
+            Row(
+              children: [
+                Icon(Icons.verified_user, color: Colors.blue, size: 20),
+                SizedBox(width: 8),
+                Expanded(child: Text('3. Verify OTP with customer')),
+              ],
+            ),
+
+            SizedBox(height: 16),
+
+            // Important Note
+            Container(
+              padding: EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.amber[50],
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: Colors.amber[200]!),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info, color: Colors.amber[700], size: 16),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Barcode verification ensures you\'re delivering the correct product to the customer.',
+                      style: TextStyle(fontSize: 12, color: Colors.amber[700]),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: Icon(Icons.play_arrow),
+            label: Text('Start Verification'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    ) ?? false;
   }
 
   // Send OTP to customer
@@ -1999,16 +3199,775 @@ class _ViewOrdersScreen5TabsState extends State<ViewOrdersScreen5Tabs>
     }
   }
 
-  // Show photo upload dialog with automatic photo taking
+  // Show photo upload dialog with automatic photo taking and barcode scanning
   Future<bool> _showPhotoUploadDialog(dynamic item, String itemType) async {
-    // Automatically take photo when dialog opens
-    await _takePhoto(item, itemType);
-
-    // Send OTP automatically in background
+    // Only show OTP verification dialog (no camera for delivery)
     await _sendDeliveryOTP(item, itemType);
 
-    // After photo is taken, show OTP verification dialog and return result
+    // Show OTP verification dialog and return result
     return await _showOTPVerificationDialog(item, itemType);
+  }
+
+  // Live barcode verification with camera
+  Future<bool> _liveBarcodeVerification(dynamic item, String itemType) async {
+    try {
+      // Reset verification state first
+      setState(() {
+        _barcodeVerified[item['id']] = false;
+      });
+
+      // Show live camera for barcode scanning
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 80,
+        maxWidth: 1920,
+        maxHeight: 1080,
+      );
+
+      if (image != null) {
+        // Show loading dialog
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            content: Row(
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(width: 16),
+                Text('Verifying barcode...'),
+              ],
+            ),
+          ),
+        );
+
+        // Send image to backend for barcode verification
+        final result = await _verifyBarcodeWithBackend(image, item, itemType);
+
+        // Close loading dialog
+        Navigator.of(context).pop();
+
+        if (result) {
+          setState(() {
+            _barcodeVerified[item['id']] = true;
+          });
+          _showSuccessSnackBar('✅ Barcode verified! Proceeding to delivery...');
+          return true;
+        } else {
+          setState(() {
+            _barcodeVerified[item['id']] = false;
+          });
+          _showErrorSnackBar('❌ Barcode verification failed. Please try again.');
+          return false;
+        }
+      } else {
+        // User cancelled
+        setState(() {
+          _barcodeVerified[item['id']] = false;
+        });
+        return false;
+      }
+    } catch (e) {
+      print('Live barcode verification error: $e');
+      setState(() {
+        _barcodeVerified[item['id']] = false;
+      });
+      _showErrorSnackBar('Error scanning barcode: $e');
+      return false;
+    }
+  }
+
+  // Scan barcode for individual product verification with live detection
+  Future<void> _scanBarcodeForProduct(dynamic item, String itemType) async {
+    try {
+      // Reset verification state first
+      setState(() {
+        _barcodeVerified[item['id']] = false;
+      });
+
+      // Show live camera with barcode detection
+      await _showLiveBarcodeScanner(item, itemType);
+
+    } catch (e) {
+      print('Barcode scanning error: $e');
+      setState(() {
+        _barcodeVerified[item['id']] = false;
+      });
+      _showErrorSnackBar('Error scanning barcode: $e');
+    }
+  }
+
+  // Simple image capture for product verification
+  Future<void> _showLiveBarcodeScanner(dynamic item, String itemType) async {
+    try {
+      // Show simple camera capture dialog
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          title: Text('Capture Product Image'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.camera_alt, size: 64, color: Colors.blue),
+              SizedBox(height: 16),
+              Text('Take a photo of the product for verification'),
+              SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      Navigator.of(context).pop();
+                      await _captureProductImage(item, itemType);
+                    },
+                    icon: Icon(Icons.camera_alt),
+                    label: Text('Take Photo'),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      Navigator.of(context).pop();
+                      await _pickProductImage(item, itemType);
+                    },
+                    icon: Icon(Icons.photo_library),
+                    label: Text('Gallery'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                setState(() {
+                  _barcodeVerified[item['id']] = false;
+                });
+              },
+              child: Text('Cancel'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      _showErrorSnackBar('Error opening camera: $e');
+    }
+  }
+
+  // Capture product image from camera
+  Future<void> _captureProductImage(dynamic item, String itemType) async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 80,
+        maxWidth: 1920,
+        maxHeight: 1080,
+      );
+
+      if (image != null) {
+        await _processProductImage(image, item, itemType);
+      }
+    } catch (e) {
+      _showErrorSnackBar('Error capturing image: $e');
+    }
+  }
+
+  // Pick product image from gallery
+  Future<void> _pickProductImage(dynamic item, String itemType) async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 80,
+        maxWidth: 1920,
+        maxHeight: 1080,
+      );
+
+      if (image != null) {
+        await _processProductImage(image, item, itemType);
+      }
+    } catch (e) {
+      _showErrorSnackBar('Error picking image: $e');
+    }
+  }
+
+  // Process the captured product image
+  Future<void> _processProductImage(XFile image, dynamic item, String itemType) async {
+    try {
+      // Show loading dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Text('Processing image...'),
+            ],
+          ),
+        ),
+      );
+
+      // Read image bytes
+      final bytes = await image.readAsBytes();
+
+      // Store the image for this item
+      setState(() {
+        _productImages[item['id']] = {
+          'image': image,
+          'bytes': bytes,
+          'timestamp': DateTime.now(),
+        };
+        _barcodeVerified[item['id']] = true; // Mark as verified since we have image
+      });
+
+      // Close loading dialog
+      Navigator.of(context).pop();
+
+      _showSuccessSnackBar('✅ Product image captured successfully!');
+
+      // Show image preview with order details
+      _showImagePreviewDialog(item, itemType, image, bytes);
+
+    } catch (e) {
+      // Close loading dialog if open
+      Navigator.of(context).pop();
+      _showErrorSnackBar('Error processing image: $e');
+    }
+  }
+
+  // Show image preview with order details
+  Future<void> _showImagePreviewDialog(dynamic item, String itemType, XFile image, Uint8List bytes) async {
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Product Image Captured'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Product image
+              Container(
+                height: 200,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.memory(
+                    bytes,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+              SizedBox(height: 16),
+
+              // Order details
+              Container(
+                padding: EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                    ]
+
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
+            child: Text('Close'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              // Proceed with delivery or exchange
+              _proceedWithAction(item, itemType);
+            },
+            child: Text('Proceed'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Proceed with delivery or exchange action
+  void _proceedWithAction(dynamic item, String itemType) {
+    if (itemType == 'orders') {
+      // Proceed with delivery
+      _showSuccessSnackBar('✅ Product verified! You can now proceed with delivery.');
+    } else if (itemType == 'exchanges') {
+      // Proceed with exchange
+      _showSuccessSnackBar('✅ Product verified! You can now proceed with exchange.');
+    }
+  }
+
+  // Build product image widget
+  Widget _buildProductImage(dynamic item, String itemType) {
+    // For exchanges, show a comparison of both products
+    if (itemType == 'exchanges') {
+      return _buildExchangeProductImages(item);
+    }
+
+    // Check if we have a captured image for this item
+    if (_productImages.containsKey(item['id'])) {
+      final imageData = _productImages[item['id']];
+      if (imageData != null && imageData['bytes'] != null) {
+        return Image.memory(
+          imageData['bytes'],
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            return _buildDefaultProductImage();
+          },
+        );
+      }
+    }
+
+    // Try to get product image URL
+    final imageUrl = _getProductImageUrl(item, itemType);
+    if (imageUrl != null && imageUrl.isNotEmpty && imageUrl != 'null') {
+      return Image.network(
+        imageUrl,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          print('❌ Image load error for $imageUrl: $error');
+          return _buildDefaultProductImage();
+        },
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return Container(
+            color: Colors.grey[200],
+            child: Center(
+              child: CircularProgressIndicator(
+                value: loadingProgress.expectedTotalBytes != null
+                    ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                    : null,
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+              ),
+            ),
+          );
+        },
+      );
+    }
+
+    return _buildDefaultProductImage();
+  }
+
+  // Build exchange product images (both old and new)
+  Widget _buildExchangeProductImages(dynamic item) {
+    return Row(
+      children: [
+        // Original product image
+        Expanded(
+          child: Container(
+            height: 80,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.red[300]!, width: 2),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: _buildSingleProductImage(
+                item['original_product']?['image_url'],
+                'Original',
+                Colors.red[100]!,
+              ),
+            ),
+          ),
+        ),
+        SizedBox(width: 4),
+        // Arrow
+        Icon(Icons.arrow_forward, color: Colors.orange[600], size: 16),
+        SizedBox(width: 4),
+        // Exchange product image
+        Expanded(
+          child: Container(
+            height: 80,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.green[300]!, width: 2),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: _buildSingleProductImage(
+                item['exchange_product']?['image_url'],
+                'New',
+                Colors.green[100]!,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Build single product image with label
+  Widget _buildSingleProductImage(String? imageUrl, String label, Color backgroundColor) {
+    if (imageUrl != null && imageUrl.isNotEmpty && imageUrl != 'null') {
+      return Stack(
+        children: [
+          Image.network(
+            imageUrl,
+            fit: BoxFit.cover,
+            width: double.infinity,
+            height: double.infinity,
+            errorBuilder: (context, error, stackTrace) {
+              return _buildDefaultProductImageWithLabel(label, backgroundColor);
+            },
+            loadingBuilder: (context, child, loadingProgress) {
+              if (loadingProgress == null) return child;
+              return Container(
+                color: backgroundColor,
+                child: Center(
+                  child: CircularProgressIndicator(
+                    value: loadingProgress.expectedTotalBytes != null
+                        ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                        : null,
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                ),
+              );
+            },
+          ),
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              decoration: BoxDecoration(
+                color: backgroundColor.withOpacity(0.8),
+                borderRadius: BorderRadius.only(
+                  bottomLeft: Radius.circular(6),
+                  bottomRight: Radius.circular(6),
+                ),
+              ),
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return _buildDefaultProductImageWithLabel(label, backgroundColor);
+  }
+
+  // Build default product image with label
+  Widget _buildDefaultProductImageWithLabel(String label, Color backgroundColor) {
+    return Container(
+      color: backgroundColor,
+      child: Stack(
+        children: [
+          Center(
+            child: Icon(
+              Icons.inventory_2,
+              color: Colors.grey[400],
+              size: 24,
+            ),
+          ),
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              decoration: BoxDecoration(
+                color: backgroundColor.withOpacity(0.8),
+                borderRadius: BorderRadius.only(
+                  bottomLeft: Radius.circular(6),
+                  bottomRight: Radius.circular(6),
+                ),
+              ),
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Build default product image placeholder
+  Widget _buildDefaultProductImage() {
+    return Container(
+      color: Colors.grey[200],
+      child: Icon(
+        Icons.inventory_2,
+        color: Colors.grey[400],
+        size: 32,
+      ),
+    );
+  }
+
+  // Get product image URL based on item type
+  String? _getProductImageUrl(dynamic item, String itemType) {
+    String? imageUrl;
+
+    if (itemType == 'orders') {
+      if (item['order_items'] != null && item['order_items'].isNotEmpty) {
+        imageUrl = item['order_items'][0]?['product']?['image_url'];
+      }
+    } else if (itemType == 'exchanges') {
+      if (item['exchange_product'] != null) {
+        imageUrl = item['exchange_product']['image_url'];
+      } else if (item['original_product'] != null) {
+        imageUrl = item['original_product']['image_url'];
+      }
+    } else if (itemType == 'cancelled_items') {
+      if (item['product'] != null) {
+        imageUrl = item['product']['image_url'];
+      }
+    }
+
+    // Add base URL if imageUrl is not null and doesn't start with http
+    if (imageUrl != null && imageUrl.isNotEmpty) {
+      if (imageUrl.startsWith('http')) {
+        return imageUrl;
+      } else {
+        return '$_baseUrl/$imageUrl';
+      }
+    }
+
+    return null;
+  }
+
+  // Convert color string to Color object
+  Color _getColorFromString(String colorString) {
+    switch (colorString.toLowerCase()) {
+      case 'red':
+        return Colors.red;
+      case 'blue':
+        return Colors.blue;
+      case 'green':
+        return Colors.green;
+      case 'yellow':
+        return Colors.yellow;
+      case 'orange':
+        return Colors.orange;
+      case 'purple':
+        return Colors.purple;
+      case 'pink':
+        return Colors.pink;
+      case 'black':
+        return Colors.black;
+      case 'white':
+        return Colors.white;
+      case 'grey':
+      case 'gray':
+        return Colors.grey;
+      case 'brown':
+        return Colors.brown;
+      default:
+        return Colors.grey[400]!;
+    }
+  }
+
+  // Get product price based on item type
+  double? _getProductPrice(dynamic item, String itemType) {
+    if (itemType == 'orders') {
+      if (item['order_items'] != null && item['order_items'].isNotEmpty) {
+        return item['order_items'][0]?['product']?['price']?.toDouble();
+      }
+    } else if (itemType == 'exchanges') {
+      if (item['exchange_product'] != null) {
+        return item['exchange_product']['price']?.toDouble();
+      } else if (item['original_product'] != null) {
+        return item['original_product']['price']?.toDouble();
+      }
+    } else if (itemType == 'cancelled_items') {
+      if (item['product'] != null) {
+        return item['product']['price']?.toDouble();
+      }
+    }
+    return null;
+  }
+
+  // Scan barcode specifically for delivery verification
+  Future<bool> _scanBarcodeForDelivery(dynamic item, String itemType) async {
+    try {
+      // Show barcode scanning dialog first
+      final shouldProceed = await _showDeliveryBarcodeDialog(item, itemType);
+      if (!shouldProceed) return false;
+
+      // Try to take photo directly - let image_picker handle permissions
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 80,
+        maxWidth: 1920,
+        maxHeight: 1080,
+      );
+
+      if (image != null) {
+        // Show loading dialog
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            content: Row(
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(width: 16),
+                Text('Verifying barcode...'),
+              ],
+            ),
+          ),
+        );
+
+        // Send image to backend for barcode verification
+        final result = await _verifyBarcodeWithBackend(image, item, itemType);
+
+        // Close loading dialog
+        Navigator.of(context).pop();
+
+        if (result) {
+          _showSuccessSnackBar('✅ Barcode verified successfully! Proceeding to delivery photo...');
+          return true;
+        } else {
+          _showErrorSnackBar('❌ Barcode verification failed. The scanned barcode does not match the expected product. Please try again.');
+          return false;
+        }
+      } else {
+        // User cancelled or no image - don't show error, just return false
+        return false;
+      }
+    } catch (e) {
+      // Check if it's a permission error
+      if (e.toString().contains('permission') || e.toString().contains('camera')) {
+        _showErrorSnackBar('Camera permission is required. Please enable it in settings.');
+      } else {
+        _showErrorSnackBar('Error scanning barcode: $e');
+      }
+      return false;
+    }
+  }
+
+  // Show delivery barcode scanning dialog
+  Future<bool> _showDeliveryBarcodeDialog(dynamic item, String itemType) async {
+    return await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.qr_code_scanner, color: Colors.blue),
+            SizedBox(width: 8),
+            Text('Verify Product Barcode'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '⚠️ MANDATORY: Scan the product barcode to verify you\'re delivering the correct item:',
+              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red[700]),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'This step is required before taking the delivery photo.',
+              style: TextStyle(fontWeight: FontWeight.w500, color: Colors.orange[700]),
+            ),
+            SizedBox(height: 16),
+
+            // Product Information
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue[200]!),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Product: ${_getProductName(item, itemType)}',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Expected Barcode: ${_getProductBarcode(item, itemType)}',
+                    style: TextStyle(color: Colors.blue[700], fontFamily: 'monospace'),
+                  ),
+                ],
+              ),
+            ),
+
+            SizedBox(height: 16),
+
+            // Instructions
+            Text('Instructions:', style: TextStyle(fontWeight: FontWeight.w500)),
+            SizedBox(height: 8),
+
+            Row(
+              children: [
+                Icon(Icons.camera_alt, color: Colors.green, size: 20),
+                SizedBox(width: 8),
+                Expanded(child: Text('Point camera at the product barcode')),
+              ],
+            ),
+            SizedBox(height: 4),
+
+            Row(
+              children: [
+                Icon(Icons.visibility, color: Colors.orange, size: 20),
+                SizedBox(width: 8),
+                Expanded(child: Text('Ensure barcode is clearly visible')),
+              ],
+            ),
+            SizedBox(height: 4),
+
+            Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.blue, size: 20),
+                SizedBox(width: 8),
+                Expanded(child: Text('Barcode will be automatically verified')),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: Icon(Icons.camera_alt),
+            label: Text('Capture Image'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    ) ?? false;
   }
 
   // Take photo automatically
@@ -2023,12 +3982,13 @@ class _ViewOrdersScreen5TabsState extends State<ViewOrdersScreen5Tabs>
             children: [
               CircularProgressIndicator(),
               SizedBox(width: 16),
-              Text('Taking photo...'),
+              Text('Opening camera...'),
             ],
           ),
         ),
       );
 
+      // Try to take photo directly - let image_picker handle permissions
       final XFile? image = await _imagePicker.pickImage(
         source: ImageSource.camera,
         imageQuality: 80,
@@ -2043,11 +4003,17 @@ class _ViewOrdersScreen5TabsState extends State<ViewOrdersScreen5Tabs>
         await _uploadDeliveryPhoto(item, itemType, image);
         _showSuccessSnackBar('Photo captured and uploaded successfully!');
       } else {
-        _showErrorSnackBar('No photo was taken');
+        // User cancelled - don't show error
+        return;
       }
     } catch (e) {
       Navigator.of(context).pop(); // Close loading dialog
-      _showErrorSnackBar('Error taking photo: $e');
+      // Check if it's a permission error
+      if (e.toString().contains('permission') || e.toString().contains('camera')) {
+        _showErrorSnackBar('Camera permission is required. Please enable it in settings.');
+      } else {
+        _showErrorSnackBar('Error taking photo: $e');
+      }
     }
   }
 
@@ -2163,6 +4129,819 @@ class _ViewOrdersScreen5TabsState extends State<ViewOrdersScreen5Tabs>
     } catch (e) {
       _showErrorSnackBar('Error marking as delivered: $e');
     }
+  }
+
+  // Get product image URL based on item type
+
+  // Print product image
+  Future<void> _printProductImage(dynamic item, String itemType) async {
+    try {
+      String? imageUrl = _getProductImageUrl(item, itemType);
+      if (imageUrl == null) {
+        _showErrorSnackBar('No product image available');
+        return;
+      }
+
+      // Request storage permission
+      var status = await Permission.storage.request();
+      if (!status.isGranted) {
+        _showErrorSnackBar('Storage permission required for printing');
+        return;
+      }
+
+      // Download and save image
+      final response = await _apiService.downloadImage(imageUrl);
+      if (response != null) {
+        // Get app directory
+        final directory = await getApplicationDocumentsDirectory();
+        final file = File('${directory.path}/product_image_${item['id']}.jpg');
+        await file.writeAsBytes(response);
+
+        // Show print dialog
+        _showPrintDialog(file, item, itemType);
+      } else {
+        _showErrorSnackBar('Failed to download image');
+      }
+    } catch (e) {
+      _showErrorSnackBar('Error printing image: $e');
+    }
+  }
+
+  // Show print dialog
+  void _showPrintDialog(File imageFile, dynamic item, String itemType) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Print Product Image'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 200,
+              height: 200,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey[300]!),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.file(
+                  imageFile,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+            SizedBox(height: 16),
+            Text(
+              'Product: ${_getProductName(item, itemType)}',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Barcode: ${_getProductBarcode(item, itemType)}',
+              style: TextStyle(color: Colors.grey[600]),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _showSuccessSnackBar('Image ready for printing');
+              // Here you would integrate with a printing service
+              // For now, we'll just show a success message
+            },
+            child: Text('Print'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Get product name
+  String _getProductName(dynamic item, String itemType) {
+    if (itemType == 'orders') {
+      if (item['order_items'] != null && item['order_items'].isNotEmpty) {
+        return item['order_items'][0]?['product']?['name'] ?? 'N/A';
+      }
+    } else if (itemType == 'exchanges') {
+      return item['exchange_product']?['name'] ?? item['original_product']?['name'] ?? 'N/A';
+    } else if (itemType == 'cancelled_items') {
+      return item['product']?['name'] ?? 'N/A';
+    }
+    return 'N/A';
+  }
+
+  // Get product barcode
+  String _getProductBarcode(dynamic item, String itemType) {
+    if (itemType == 'orders') {
+      if (item['order_items'] != null && item['order_items'].isNotEmpty) {
+        return item['order_items'][0]?['product']?['barcode'] ?? 'N/A';
+      }
+    } else if (itemType == 'exchanges') {
+      return item['exchange_product']?['barcode'] ?? item['original_product']?['barcode'] ?? 'N/A';
+    } else if (itemType == 'cancelled_items') {
+      return item['product']?['barcode'] ?? 'N/A';
+    }
+    return 'N/A';
+  }
+
+  // Scan barcode using camera
+  Future<void> _scanBarcode(dynamic item, String itemType) async {
+    try {
+      // Show barcode scanning instructions
+      final shouldProceed = await _showBarcodeInstructionsDialog();
+      if (!shouldProceed) return;
+
+      // Try to take photo directly - let image_picker handle permissions
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 80,
+        maxWidth: 1920,
+        maxHeight: 1080,
+      );
+
+      if (image != null) {
+        // Show loading dialog
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            content: Row(
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(width: 16),
+                Text('Scanning barcode...'),
+              ],
+            ),
+          ),
+        );
+
+        // Send image to backend for barcode verification
+        final result = await _verifyBarcodeWithBackend(image, item, itemType);
+
+        // Close loading dialog
+        Navigator.of(context).pop();
+
+        if (result) {
+          setState(() {
+            _barcodeVerified[item['id']] = true;
+          });
+          _showSuccessSnackBar('Barcode verified successfully!');
+
+          // Update delivery status after verification
+          await _updateDeliveryStatusAfterVerification(item, itemType);
+        } else {
+          _showErrorSnackBar('Barcode verification failed. Please try again.');
+        }
+      } else {
+        // User cancelled - don't show error
+        return;
+      }
+    } catch (e) {
+      // Check if it's a permission error
+      if (e.toString().contains('permission') || e.toString().contains('camera')) {
+        _showErrorSnackBar('Camera permission is required. Please enable it in settings.');
+      } else {
+        _showErrorSnackBar('Error scanning barcode: $e');
+      }
+    }
+  }
+
+
+  // Show barcode scanning instructions
+  Future<bool> _showBarcodeInstructionsDialog() async {
+    return await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Barcode Scanning Instructions'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Please follow these steps:'),
+            SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(Icons.looks_one, color: Colors.blue),
+                SizedBox(width: 8),
+                Expanded(child: Text('Point camera at the product barcode')),
+              ],
+            ),
+            SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(Icons.looks_two, color: Colors.blue),
+                SizedBox(width: 8),
+                Expanded(child: Text('Ensure barcode is clearly visible')),
+              ],
+            ),
+            SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(Icons.looks_3, color: Colors.blue),
+                SizedBox(width: 8),
+                Expanded(child: Text('Hold steady and tap capture')),
+              ],
+            ),
+            SizedBox(height: 12),
+            Container(
+              padding: EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.orange[50],
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: Colors.orange[200]!),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info, color: Colors.orange[700], size: 16),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'The barcode will be automatically verified against the product.',
+                      style: TextStyle(fontSize: 12, color: Colors.orange[700]),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text('Start Scanning'),
+          ),
+        ],
+      ),
+    ) ?? false;
+  }
+
+  // Verify barcode with backend
+  Future<bool> _verifyBarcodeWithBackend(XFile? image, dynamic item, String itemType, [String? detectedBarcode]) async {
+    try {
+      setState(() {
+        _isVerifyingBarcode = true;
+      });
+
+      // Get expected barcode
+      String expectedBarcode = _getProductBarcode(item, itemType);
+      if (expectedBarcode == 'N/A') {
+        print('Expected barcode is N/A');
+        setState(() {
+          _isVerifyingBarcode = false;
+        });
+        return false;
+      }
+
+      print('Verifying barcode: $expectedBarcode');
+      print('Detected barcode: $detectedBarcode');
+
+      // If we have a detected barcode from live scanning, still verify with backend
+      if (detectedBarcode != null) {
+        print('Detected barcode from scanner: $detectedBarcode');
+        print('Expected barcode: $expectedBarcode');
+
+        // Always verify with backend even for detected barcodes
+        if (image != null) {
+          final response = await _apiService.verifyBarcode(image, expectedBarcode, authToken: widget.authToken);
+          print('Backend verification response: $response');
+
+          setState(() {
+            _isVerifyingBarcode = false;
+          });
+
+          bool isSuccess = response['success'] == true;
+          bool isVerified = response['verified'] == true;
+          print('Backend verification - Success: $isSuccess, Verified: $isVerified');
+
+          return isSuccess && isVerified;
+        } else {
+          // If no image, we can't verify with backend
+          setState(() {
+            _isVerifyingBarcode = false;
+          });
+          return false;
+        }
+      }
+
+      // If we have an image, use backend verification
+      if (image != null) {
+        final response = await _apiService.verifyBarcode(image, expectedBarcode, authToken: widget.authToken);
+
+        print('Barcode verification response: $response');
+
+        setState(() {
+          _isVerifyingBarcode = false;
+        });
+
+        // Check both success and verified fields
+        bool isSuccess = response['success'] == true;
+        bool isVerified = response['verified'] == true;
+
+        print('Success: $isSuccess, Verified: $isVerified');
+
+        return isSuccess && isVerified;
+      }
+
+      setState(() {
+        _isVerifyingBarcode = false;
+      });
+      return false;
+    } catch (e) {
+      print('Barcode verification error: $e');
+      setState(() {
+        _isVerifyingBarcode = false;
+      });
+      return false;
+    }
+  }
+
+  // Send image to backend for real barcode detection
+  Future<Map<String, dynamic>> _sendImageForBarcodeDetection(XFile image, dynamic item, String itemType) async {
+    try {
+      final baseUrl = 'http://172.31.31.194:5000'; // Server IP address
+      final uri = Uri.parse("$baseUrl/api/delivery-orders/detect-barcode");
+
+      var request = http.MultipartRequest("POST", uri);
+      request.headers["Authorization"] = widget.authToken.startsWith("Bearer ") ? widget.authToken : "Bearer ${widget.authToken}";
+
+      // Add image file
+      request.files.add(await http.MultipartFile.fromPath('image', image.path));
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      print("🔍 Barcode Detection Response: ${response.statusCode} - ${response.body}");
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return {
+          "success": true,
+          "detected_barcode": data["detected_barcode"],
+          "message": data["message"] ?? "Barcode detection completed"
+        };
+      } else {
+        try {
+          final errorData = jsonDecode(response.body);
+          return {
+            "success": false,
+            "error": errorData["error"] ?? "Barcode detection failed"
+          };
+        } catch (_) {
+          return {
+            "success": false,
+            "error": "Server error: ${response.statusCode} - ${response.body}"
+          };
+        }
+      }
+    } catch (e) {
+      print("❌ Error detecting barcode: $e");
+      return {"success": false, "error": "Network error: $e"};
+    }
+  }
+
+  // Update delivery status after barcode verification
+  Future<void> _updateDeliveryStatusAfterVerification(dynamic item, String itemType) async {
+    try {
+      // Update status to verified
+      final response = await _apiService.updateDeliveryStatus(
+          item['id'],
+          'verified',
+          'Barcode verified successfully',
+          authToken: widget.authToken
+      );
+
+      if (response['success'] == true) {
+        _showSuccessSnackBar('Delivery status updated to verified');
+        // Refresh data
+        _loadData();
+      } else {
+        _showErrorSnackBar(response['error'] ?? 'Failed to update delivery status');
+      }
+    } catch (e) {
+      _showErrorSnackBar('Error updating delivery status: $e');
+    }
+  }
+}
+
+// Live Barcode Scanner Dialog Widget
+class LiveBarcodeScannerDialog extends StatefulWidget {
+  final dynamic item;
+  final String itemType;
+  final String expectedBarcode;
+  final Function(String, XFile) onBarcodeDetected;
+  final Future<Map<String, dynamic>> Function(XFile) onImageCaptured;
+  final VoidCallback onCancel;
+
+  const LiveBarcodeScannerDialog({
+    Key? key,
+    required this.item,
+    required this.itemType,
+    required this.expectedBarcode,
+    required this.onBarcodeDetected,
+    required this.onImageCaptured,
+    required this.onCancel,
+  }) : super(key: key);
+
+  @override
+  _LiveBarcodeScannerDialogState createState() => _LiveBarcodeScannerDialogState();
+}
+
+class _LiveBarcodeScannerDialogState extends State<LiveBarcodeScannerDialog> {
+  final ImagePicker _imagePicker = ImagePicker();
+  bool _isScanning = false;
+  String _detectedBarcode = '';
+  String _statusMessage = 'Point camera at barcode...';
+  XFile? _capturedImage;
+  Uint8List? _imageBytes;
+
+  @override
+  void initState() {
+    super.initState();
+    _startLiveScanning();
+  }
+
+  void _startLiveScanning() {
+    setState(() {
+      _isScanning = true;
+      _statusMessage = 'Position barcode within the green frame. Ensure barcode is clear and fully visible.';
+    });
+  }
+
+  Future<void> _captureAndDetect() async {
+    if (_isScanning) {
+      try {
+        final XFile? image = await _imagePicker.pickImage(
+          source: ImageSource.camera,
+          imageQuality: 90, // Higher quality for better barcode detection
+          maxWidth: 2048,   // Higher resolution for better detection
+          maxHeight: 2048,
+        );
+
+        if (image != null) {
+          // Store captured image for preview
+          setState(() {
+            _capturedImage = image;
+            _statusMessage = 'Image captured! Analyzing...';
+          });
+
+          // Read image bytes for preview
+          final bytes = await image.readAsBytes();
+          setState(() {
+            _imageBytes = bytes;
+          });
+
+          // Show preview for 2 seconds before detection
+          await Future.delayed(Duration(seconds: 2));
+
+          setState(() {
+            _statusMessage = 'Sending to backend for detection...';
+          });
+
+          // Send image to backend for real barcode detection
+          final detectionResult = await widget.onImageCaptured(image);
+
+          if (detectionResult['success'] == true) {
+            final detectedBarcode = detectionResult['detected_barcode'];
+
+            setState(() {
+              _detectedBarcode = detectedBarcode;
+              _statusMessage = 'Barcode detected: $detectedBarcode';
+            });
+
+            // Auto-verify after detection
+            await Future.delayed(Duration(milliseconds: 500));
+            widget.onBarcodeDetected(detectedBarcode, image);
+          } else {
+            // Detection failed
+            setState(() {
+              _detectedBarcode = '';
+              _statusMessage = 'Detection failed: ${detectionResult['error'] ?? 'Unknown error'}';
+            });
+          }
+        }
+      } catch (e) {
+        setState(() {
+          _statusMessage = 'Error: $e';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.black,
+      child: Container(
+        width: MediaQuery.of(context).size.width * 0.9,
+        height: MediaQuery.of(context).size.height * 0.7,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header
+              Container(
+                padding: EdgeInsets.all(16),
+                color: Colors.black,
+                child: Row(
+                  children: [
+                    Icon(Icons.qr_code_scanner, color: Colors.white, size: 24),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Capture Image',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            'Expected: ${widget.expectedBarcode}',
+                            style: TextStyle(
+                              color: Colors.grey,
+                              fontSize: 12,
+                            ),
+                          ),
+                          if (_capturedImage != null) ...[
+                            SizedBox(height: 4),
+                            Text(
+                              'Image: ${_capturedImage!.name}',
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontSize: 10,
+                              ),
+                            ),
+                            Text(
+                              'Size: ${_imageBytes?.length ?? 0} bytes',
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontSize: 10,
+                              ),
+                            ),
+                            if (_detectedBarcode.isNotEmpty) ...[
+                              SizedBox(height: 4),
+                              Text(
+                                'Detected: $_detectedBarcode',
+                                style: TextStyle(
+                                  color: Colors.orange,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: widget.onCancel,
+                      icon: Icon(Icons.close, color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Camera Preview Area
+              Flexible(
+                child: Container(
+                  height: 400, // Fixed height instead of Expanded
+                  color: Colors.grey[900],
+                  child: Stack(
+                    children: [
+                      // Show captured image preview or camera placeholder
+                      if (_imageBytes != null)
+                      // Captured image preview
+                        Center(
+                          child: Container(
+                            width: double.infinity,
+                            height: double.infinity,
+                            child: Image.memory(
+                              _imageBytes!,
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                        )
+                      else
+                      // Camera placeholder (in real app, use CameraPreview)
+                        Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.camera_alt,
+                                size: 80,
+                                color: Colors.grey[600],
+                              ),
+                              SizedBox(height: 16),
+                              Text(
+                                'Camera Preview',
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 16,
+                                ),
+                              ),
+                              SizedBox(height: 8),
+                              Text(
+                                'Point camera at barcode',
+                                style: TextStyle(
+                                  color: Colors.grey[500],
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                      // Scanning overlay with better framing guidance
+                      if (_isScanning && _imageBytes == null)
+                        Center(
+                          child: Container(
+                            width: 250,
+                            height: 150,
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: Colors.green,
+                                width: 3,
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Stack(
+                              children: [
+                                // Corner indicators
+                                Positioned(
+                                  top: 0,
+                                  left: 0,
+                                  child: Container(
+                                    width: 25,
+                                    height: 25,
+                                    decoration: BoxDecoration(
+                                      color: Colors.green,
+                                      borderRadius: BorderRadius.only(
+                                        topLeft: Radius.circular(12),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                Positioned(
+                                  top: 0,
+                                  right: 0,
+                                  child: Container(
+                                    width: 25,
+                                    height: 25,
+                                    decoration: BoxDecoration(
+                                      color: Colors.green,
+                                      borderRadius: BorderRadius.only(
+                                        topRight: Radius.circular(12),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                Positioned(
+                                  bottom: 0,
+                                  left: 0,
+                                  child: Container(
+                                    width: 25,
+                                    height: 25,
+                                    decoration: BoxDecoration(
+                                      color: Colors.green,
+                                      borderRadius: BorderRadius.only(
+                                        bottomLeft: Radius.circular(12),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                Positioned(
+                                  bottom: 0,
+                                  right: 0,
+                                  child: Container(
+                                    width: 25,
+                                    height: 25,
+                                    decoration: BoxDecoration(
+                                      color: Colors.green,
+                                      borderRadius: BorderRadius.only(
+                                        bottomRight: Radius.circular(12),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                // Center guidance text
+                                Center(
+                                  child: Container(
+                                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withOpacity(0.7),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      'Position barcode here',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // Status and Controls
+              Container(
+                padding: EdgeInsets.all(16),
+                color: Colors.black,
+                child: Column(
+                  children: [
+                    Text(
+                      _statusMessage,
+                      style: TextStyle(
+                        color: _detectedBarcode.isNotEmpty ? Colors.green : Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    SizedBox(height: 16),
+                    Row(
+                      children: [
+                        if (_imageBytes == null) ...[
+                          // Capture button (only when no image captured)
+                          Flexible(
+                            child: ElevatedButton.icon(
+                              onPressed: _isScanning ? _captureAndDetect : null,
+                              icon: Icon(Icons.camera_alt, size: 20),
+                              label: Text('Capture & Detect'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue,
+                                foregroundColor: Colors.white,
+                                padding: EdgeInsets.symmetric(vertical: 12),
+                              ),
+                            ),
+                          ),
+                          SizedBox(width: 12),
+                        ] else ...[
+                          // Retake button (when image is captured)
+                          Flexible(
+                            child: ElevatedButton.icon(
+                              onPressed: () {
+                                setState(() {
+                                  _capturedImage = null;
+                                  _imageBytes = null;
+                                  _detectedBarcode = '';
+                                  _statusMessage = 'Point camera at barcode...';
+                                });
+                              },
+                              icon: Icon(Icons.refresh, size: 20),
+                              label: Text('Retake'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.orange,
+                                foregroundColor: Colors.white,
+                                padding: EdgeInsets.symmetric(vertical: 12),
+                              ),
+                            ),
+                          ),
+                          SizedBox(width: 12),
+                        ],
+                        Flexible(
+                          child: ElevatedButton.icon(
+                            onPressed: widget.onCancel,
+                            icon: Icon(Icons.cancel, size: 20),
+                            label: Text('Cancel'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red,
+                              foregroundColor: Colors.white,
+                              padding: EdgeInsets.symmetric(vertical: 12),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

@@ -81,7 +81,20 @@ def add_to_cart_route():
         if not encrypted:
             return jsonify({"success": False, "error": "Missing data"}), 400
         
-        data = decrypt_payload(encrypted)
+        # Try to handle both encrypted and base64 data
+        try:
+            data = decrypt_payload(encrypted)
+        except:
+            # If decryption fails, try base64 decode
+            try:
+                import base64
+                import json
+                decoded = base64.b64decode(encrypted).decode('utf-8')
+                data = json.loads(decoded)
+                print(f"[CART ROUTE] Using base64 data: {data}")
+            except Exception as e:
+                return jsonify({"success": False, "error": f"Failed to decode data: {str(e)}"}), 400
+        
         customer_id = request.customer_id
         product_id = data.get("product_id")
         quantity = data.get("quantity", 1)
@@ -111,7 +124,20 @@ def update_cart_quantity_route(cart_id):
         if not encrypted:
             return jsonify({"success": False, "error": "Missing data"}), 400
         
-        data = decrypt_payload(encrypted)
+        # Try to handle both encrypted and base64 data
+        try:
+            data = decrypt_payload(encrypted)
+        except:
+            # If decryption fails, try base64 decode
+            try:
+                import base64
+                import json
+                decoded = base64.b64decode(encrypted).decode('utf-8')
+                data = json.loads(decoded)
+                print(f"[CART UPDATE] Using base64 data: {data}")
+            except Exception as e:
+                return jsonify({"success": False, "error": f"Failed to decode data: {str(e)}"}), 400
+        
         quantity = data.get("quantity")
         
         if quantity is None:

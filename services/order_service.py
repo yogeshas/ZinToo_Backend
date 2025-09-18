@@ -3,6 +3,7 @@ from models.order import Order, OrderItem
 from models.product import Product
 from models.customer import Customer
 from models.coupons import Coupon
+from models.transaction import Transaction
 from extensions import db
 from utils.crypto import encrypt_payload, decrypt_payload
 from datetime import datetime, timedelta
@@ -214,6 +215,32 @@ def create_order(customer_id: int, order_data: dict):
         print(f"[ORDER SERVICE] Committing to database...")
         db.session.commit()
         print(f"[ORDER SERVICE] Order committed successfully")
+        
+        # Create transaction record for order payment
+        try:
+            Transaction.create_transaction(
+                customer_id=customer_id,
+                transaction_type="order_payment",
+                amount=total_amount,
+                description=f"Order payment for Order #{order.order_number}",
+                reference_id=str(order.id),
+                reference_type="order",
+                payment_method=payment_method,
+                metadata={
+                    "order_id": order.id,
+                    "order_number": order.order_number,
+                    "subtotal": subtotal,
+                    "delivery_fee": delivery_fee,
+                    "platform_fee": platform_fee,
+                    "discount_amount": discount_amount,
+                    "total_amount": total_amount,
+                    "item_count": len(items),
+                    "coupon_id": coupon_id
+                }
+            )
+            print(f"[ORDER SERVICE] Transaction logged for order {order.id}")
+        except Exception as e:
+            print(f"[ORDER SERVICE] Warning: Failed to log transaction: {str(e)}")
         
         # Get complete order data
         order_data = order.as_dict()

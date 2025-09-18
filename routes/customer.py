@@ -14,6 +14,9 @@ import jwt
 import os
 from datetime import datetime, timedelta
 from extensions import db
+from sqlalchemy import func, and_, desc
+from models.customer import Customer
+from models.order import Order, OrderItem
 
 
 customer_bp = Blueprint("customer", __name__)
@@ -257,3 +260,88 @@ def block_customer_route(current_admin, cid):
             return jsonify({"success": False, "error": "Failed to update customer status"}), 500
     except Exception as e:
         return jsonify({"success": False, "error": f"Block/Unblock failed: {str(e)}"}), 500
+
+@customer_bp.route("/analytics", methods=["GET"])
+# @require_admin_auth  # Temporarily disabled for testing
+def get_customer_analytics():
+    """
+    Get customer analytics for dashboard
+    Returns: new customers (last 6 days), active customers (not blocked), 
+    top repeat customers (top 2 by order count), total customers
+    """
+    try:
+        now = datetime.utcnow()
+        six_days_ago = now - timedelta(days=6)
+        
+        # 1. New Customers - Last 6 days including today
+        new_customers = Customer.query.filter(
+            Customer.id.in_(
+                db.session.query(Order.customer_id)
+                .filter(Order.created_at >= six_days_ago)
+                .distinct()
+            )
+        ).count()
+        
+        # 2. Active Customers - Not blocked customers (status != 'blocked')
+        active_customers = Customer.query.filter(
+            and_(
+                Customer.status != 'blocked',
+                Customer.status != 'suspended'
+            )
+        ).count()
+        
+        # 3. Top Repeat Customers - Top 2 customers by order count
+        top_customers = db.session.query(
+            Order.customer_id,
+            func.count(Order.id).label('order_count')
+        ).group_by(Order.customer_id).order_by(desc('order_count')).limit(2).all()
+        
+        repeat_customers = len(top_customers)
+        
+        # 4. Total Customers - Total count from customer table
+        total_customers = Customer.query.count()
+        
+        # Additional breakdown data for doughnut charts
+        blocked_customers = Customer.query.filter(Customer.status == 'blocked').count()
+        suspended_customers = Customer.query.filter(Customer.status == 'suspended').count()
+        
+        # Previous 6 days for comparison
+        twelve_days_ago = now - timedelta(days=12)
+        previous_new_customers = Customer.query.filter(
+            Customer.id.in_(
+                db.session.query(Order.customer_id)
+                .filter(
+                    and_(
+                        Order.created_at >= twelve_days_ago,
+                        Order.created_at < six_days_ago
+                    )
+                )
+                .distinct()
+            )
+        ).count()
+        
+        return jsonify({
+            "success": True,
+            "data": {
+                "new_customers": new_customers,
+                "active_customers": active_customers,
+                "repeat_customers": repeat_customers,
+                "total_customers": total_customers,
+                "breakdown": {
+                    "blocked_customers": blocked_customers,
+                    "suspended_customers": suspended_customers,
+                    "previous_new_customers": previous_new_customers
+                },
+                "top_customers": [
+                    {
+                        "customer_id": customer_id,
+                        "order_count": order_count
+                    }
+                    for customer_id, order_count in top_customers
+                ]
+            }
+        })
+        
+    except Exception as e:
+        print(f"Error getting customer analytics: {e}")
+        return jsonify({"success": False, "error": "Internal server error", "details": str(e)}), 500

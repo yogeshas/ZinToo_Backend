@@ -31,8 +31,10 @@ class Product(db.Model):
     shared_count = db.Column(db.Integer, default=0)
     discount_value = db.Column(db.Float, default=0.0)
     barcode = db.Column(db.String(50), unique=True, nullable=True, index=True)
+    barcode_image = db.Column(db.Text, nullable=True)  # Store base64 encoded barcode image
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
     updated_at = db.Column(db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
+    actual_price = db.Column(db.Float, default=0.0)
 
     # Relationships
     category = db.relationship("Category", backref="products")
@@ -121,6 +123,48 @@ class Product(db.Model):
                 total += sum(int(v or 0) for v in color["sizeCounts"].values())
         return total
 
+    def get_color_size_stock(self, color_name, size):
+        """Get stock quantity for a specific color and size combination"""
+        colors = self.get_colors_data()
+        for color in colors:
+            if isinstance(color, dict) and color.get("name") == color_name:
+                size_counts = color.get("sizeCounts", {})
+                return int(size_counts.get(size, 0))
+        return 0
+
+    def is_color_size_available(self, color_name, size):
+        """Check if a specific color and size combination is available"""
+        return self.get_color_size_stock(color_name, size) > 0
+
+    def reserve_color_size(self, color_name, size, quantity=1):
+        """Reserve/remove quantity from a specific color and size combination"""
+        if not self.is_color_size_available(color_name, size) or self.get_color_size_stock(color_name, size) < quantity:
+            return False, f"Insufficient stock for {color_name} - {size}"
+        
+        colors = self.get_colors_data()
+        for color in colors:
+            if isinstance(color, dict) and color.get("name") == color_name:
+                size_counts = color.get("sizeCounts", {})
+                size_counts[size] = max(0, size_counts.get(size, 0) - quantity)
+                color["sizeCounts"] = size_counts
+                self.colors = json.dumps(colors)
+                return True, f"Reserved {quantity} of {color_name} - {size}"
+        
+        return False, f"Color {color_name} not found"
+
+    def add_color_size_stock(self, color_name, size, quantity=1):
+        """Add quantity back to a specific color and size combination"""
+        colors = self.get_colors_data()
+        for color in colors:
+            if isinstance(color, dict) and color.get("name") == color_name:
+                size_counts = color.get("sizeCounts", {})
+                size_counts[size] = size_counts.get(size, 0) + quantity
+                color["sizeCounts"] = size_counts
+                self.colors = json.dumps(colors)
+                return True, f"Added {quantity} to {color_name} - {size}"
+        
+        return False, f"Color {color_name} not found"
+
     def to_dict(self):
         # Build images list from comma-separated storage
         images_list = []
@@ -171,12 +215,14 @@ class Product(db.Model):
             "is_new": self.is_new,
             "shared_count": self.shared_count,
             "barcode": self.barcode,
+            "barcode_image": self.barcode_image,
             "final_price": round(final_price, 2),
             "original_price": round(original_price, 2),
             "category": self.category.category_name if self.category else None,
             "subcategory": self.subcategory.sub_category_name if self.subcategory else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "actual_price": round(self.actual_price, 2),
         }
         
         return result

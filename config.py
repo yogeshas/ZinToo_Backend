@@ -18,8 +18,12 @@ class Config:
     DB_PORT = os.getenv("DB_PORT", "3306")
     DB_NAME = os.getenv("DB_NAME", "mydatabase")
 
+    # URL encode the password to handle special characters
+    from urllib.parse import quote_plus
+    encoded_password = quote_plus(DB_PASSWORD)
+    
     SQLALCHEMY_DATABASE_URI = (
-        f"mysql+mysqlconnector://{DB_USER}:{DB_PASSWORD}"
+        f"mysql+mysqlconnector://{DB_USER}:{encoded_password}"
         f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
@@ -38,9 +42,38 @@ class Config:
     GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
     GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI")
     
-    # AWS S3 configuration
+    # AWS S3 configuration - All required from environment
     AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
     AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
-    AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
-    S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "zintoo")
-    S3_CATEGORY_FOLDER = os.getenv("S3_CATEGORY_FOLDER", "category/")
+    AWS_REGION = os.getenv("AWS_REGION")
+    S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
+    S3_CATEGORY_FOLDER = os.getenv("S3_CATEGORY_FOLDER")
+    S3_PRODUCT_FOLDER = os.getenv("S3_PRODUCT_FOLDER")
+    S3_REVIEW_FOLDER = os.getenv("S3_REVIEW_FOLDER")
+    S3_WIDGET_FOLDER = os.getenv("S3_WIDGET_FOLDER")
+    S3_VIDEO_FOLDER = os.getenv("S3_VIDEO_FOLDER")
+    S3_DOCUMENT_FOLDER = os.getenv("S3_DOCUMENT_FOLDER")
+    
+    # AWS SNS configuration for push notifications
+    SNS_APPLICATION_ARN_ANDROID = os.getenv("SNS_APPLICATION_ARN_ANDROID")
+    SNS_APPLICATION_ARN_IOS = os.getenv("SNS_APPLICATION_ARN_IOS")
+    FCM_SERVER_KEY = os.getenv("FCM_SERVER_KEY")  # For direct FCM integration
+    FCM_SERVICE_ACCOUNT_PATH = os.getenv("FCM_SERVICE_ACCOUNT_PATH")  # For Firebase Admin SDK
+    
+    # Validate required S3 environment variables
+    required_s3_vars = {
+        "AWS_ACCESS_KEY_ID": AWS_ACCESS_KEY_ID,
+        "AWS_SECRET_ACCESS_KEY": AWS_SECRET_ACCESS_KEY,
+        "AWS_REGION": AWS_REGION,
+        "S3_BUCKET_NAME": S3_BUCKET_NAME,
+        "S3_CATEGORY_FOLDER": S3_CATEGORY_FOLDER,
+        "S3_PRODUCT_FOLDER": S3_PRODUCT_FOLDER,
+        "S3_REVIEW_FOLDER": S3_REVIEW_FOLDER,
+        "S3_WIDGET_FOLDER": S3_WIDGET_FOLDER,
+        "S3_VIDEO_FOLDER": S3_VIDEO_FOLDER,
+        "S3_DOCUMENT_FOLDER": S3_DOCUMENT_FOLDER
+    }
+    
+    missing_vars = [var for var, value in required_s3_vars.items() if not value]
+    if missing_vars:
+        raise ValueError(f"❌ Missing required S3 environment variables: {', '.join(missing_vars)}. Please set all S3 configuration variables in your .env file.")

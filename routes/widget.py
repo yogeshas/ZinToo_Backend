@@ -94,13 +94,18 @@ def remove_widget_image_route(widget_id, image_path):
 
 @widget_bp.route("/images/<path:image_path>")
 def serve_widget_image(image_path):
-    """Serve widget images"""
+    """Serve widget images (backward compatibility for local files)"""
     try:
         # Decode the image path
         import urllib.parse
         decoded_image_path = urllib.parse.unquote(image_path)
         
-        # Ensure the path is within the assets directory
+        # Check if it's an S3 URL - redirect to S3
+        if decoded_image_path.startswith('https://') and 's3' in decoded_image_path:
+            from flask import redirect
+            return redirect(decoded_image_path)
+        
+        # Handle local files (backward compatibility)
         if not decoded_image_path.startswith('assets/img/widgets/'):
             return jsonify({"error": "Invalid image path"}), 400
         

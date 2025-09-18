@@ -100,13 +100,12 @@ def upload_media(current_customer):
             return jsonify({"success": False, "error": f"Unsupported file type: {ext}"}), 400
 
     try:
-        # Upload files to S3
+        # Upload files to S3 using environment configuration
         # Use customer ID as file_id for unique naming
         result = s3_service.upload_multiple_files(
             files, 
             current_customer["id"], 
-            "media", 
-            "review_media"
+            "review"  # Use review folder from environment
         )
         
         if not result['images'] and not result['videos']:

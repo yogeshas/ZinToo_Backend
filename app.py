@@ -145,6 +145,8 @@ try:
     from routes.earnings_management import earnings_management_bp
     from routes.exchange import exchange_bp
     from routes.order_items import order_items_bp
+    from routes.barcode_verification import barcode_verification_bp
+    from routes.transaction import transaction_bp
     
     # Register new blueprints
     app.register_blueprint(wallet_bp, url_prefix='/api/wallet')
@@ -163,6 +165,8 @@ try:
     app.register_blueprint(earnings_management_bp, url_prefix='/api/earnings-management')
     app.register_blueprint(exchange_bp, url_prefix='/api/exchanges')
     app.register_blueprint(order_items_bp, url_prefix='/api/order-items')
+    app.register_blueprint(barcode_verification_bp, url_prefix='/api/delivery-orders')
+    app.register_blueprint(transaction_bp, url_prefix='/api')
     print("✅ New blueprints registered successfully")
 except Exception as e:
     print(f"⚠️ Warning: Could not register new blueprints: {str(e)}")

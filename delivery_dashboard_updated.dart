@@ -1,17 +1,20 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:zintoomobile/features/dashboard/widgets/order_tab_button.dart';
-import 'package:zintoomobile/features/dashboard/widgets/section_header.dart';
-import 'package:zintoomobile/features/dashboard/screens/view_orders.dart';
-import 'package:zintoomobile/features/dashboard/screens/approved_orders.dart';
-import 'package:zintoomobile/features/dashboard/screens/cancelled_orders.dart';
 import '../../auth/screens/login_screen.dart';
-import './account_screen.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
+import 'view_orders.dart';
+import 'approved_orders.dart';
+import 'cancelled_orders.dart';
+import '../../../core/services/api_service.dart';
+import 'edit_profile_screen.dart';
+import 'leave_request_screen.dart';
+import 'earnings_management_screen.dart';
 
 class DeliveryDashboard extends StatefulWidget {
   final String email;
-  const DeliveryDashboard({Key? key, required this.email}) : super(key: key);
+  final String authToken;
+  const DeliveryDashboard({Key? key, required this.email, required this.authToken}) : super(key: key);
 
   @override
   State<DeliveryDashboard> createState() => _DeliveryDashboardState();
@@ -20,8 +23,88 @@ class DeliveryDashboard extends StatefulWidget {
 class _DeliveryDashboardState extends State<DeliveryDashboard> {
   int _currentIndex = 0;
   int _selectedTab = 0;
-  DateTime _selectedDate = DateTime.now();
   String? _authToken;
+  File? _profileImage;
+  final ImagePicker _picker = ImagePicker();
+  final ApiService _apiService = ApiService();
+
+  // User profile data
+  Map<String, dynamic>? _userProfile;
+  bool _isLoadingProfile = false;
+  String? _profileError;
+
+  // Base URL for images
+  final String _baseUrl = 'http://13.211.168.61:5000/';
+
+  Future<void> _showImageSourceDialog() async {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return SimpleDialog(
+          title: const Text('Upload Profile Picture'),
+          children: <Widget>[
+            SimpleDialogOption(
+              onPressed: () {
+                Navigator.pop(context); // Close dialog
+                _pickImageFromGallery(); // Pick image
+              },
+              child: const Text('Choose photo from gallery'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Pick image from gallery
+  Future<void> _pickImageFromGallery() async {
+    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+    if (image != null) {
+      setState(() {
+        _profileImage = File(image.path);
+      });
+
+      // Upload the new profile image
+      await _updateProfileImage();
+    }
+  }
+
+  // Update profile image
+  Future<void> _updateProfileImage() async {
+    if (_profileImage == null || _authToken == null) return;
+
+    setState(() {
+      _isLoadingProfile = true;
+    });
+
+    try {
+      final result = await _apiService.updateUserProfile(
+        _authToken!,
+        {}, // Empty data, just updating image
+        profileImage: _profileImage,
+      );
+
+      if (result['success']) {
+        // Refresh profile data
+        await _loadUserProfile();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Profile picture updated successfully!')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result['message'] ?? 'Failed to update profile picture')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error updating profile picture: $e')),
+      );
+    } finally {
+      setState(() {
+        _isLoadingProfile = false;
+      });
+    }
+  }
 
   @override
   void initState() {
@@ -31,421 +114,649 @@ class _DeliveryDashboardState extends State<DeliveryDashboard> {
 
   Future<void> _loadAuthToken() async {
     final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('authToken');
     setState(() {
-      _authToken = token;
+      _authToken = prefs.getString('authToken');
     });
+
+    // Load user profile after getting auth token
+    if (_authToken != null) {
+      await _loadUserProfile();
+    }
+  }
+
+  // Load user profile data
+  Future<void> _loadUserProfile() async {
+    if (_authToken == null) return;
+
+    setState(() {
+      _isLoadingProfile = true;
+      _profileError = null;
+    });
+
+    try {
+      final result = await _apiService.getUserProfile(_authToken!);
+
+      if (result['success']) {
+        setState(() {
+          _userProfile = result['profile'];
+        });
+        print('Profile loaded: $_userProfile'); // Debug log
+      } else {
+        setState(() {
+          _profileError = result['message'] ?? 'Failed to load profile';
+        });
+        print('Profile load error: ${result['message']}'); // Debug log
+      }
+    } catch (e) {
+      setState(() {
+        _profileError = 'Error loading profile: $e';
+      });
+      print('Profile load exception: $e'); // Debug log
+    } finally {
+      setState(() {
+        _isLoadingProfile = false;
+      });
+    }
+  }
+
+  // Helper method to get full image URL
+  String _getFullImageUrl(String? imagePath) {
+    if (imagePath == null || imagePath.isEmpty) {
+      return '';
+    }
+
+    // If it's already a full URL, return as is
+    if (imagePath.startsWith('http')) {
+      return imagePath;
+    }
+
+    // Remove leading slash if present to avoid double slashes
+    final cleanPath = imagePath.startsWith('/') ? imagePath.substring(1) : imagePath;
+
+    // Construct full URL
+    return '$_baseUrl/$cleanPath';
   }
 
   List<Widget> get _orderScreens {
     return [
-      ViewOrdersScreen(authToken: _authToken ?? ''),
+      ViewOrdersScreen5Tabs(authToken: _authToken ?? ''),
       ApprovedOrdersScreen(),
       CancelledOrdersScreen(),
     ];
   }
 
-  void _onDatePicked() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2100),
+  Widget _ordersTab() {
+    return SafeArea(
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 12),
+                Expanded(
+                  child: _authToken != null
+                      ? _orderScreens[_selectedTab]
+                      : const Center(child: CircularProgressIndicator()),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
-    if (picked != null && picked != _selectedDate) setState(() => _selectedDate = picked);
   }
 
-  @override
-  Widget build(BuildContext context) {
-    // Helper: pill-style tab
-    Widget _pillTab(String label, int idx) {
-      final bool selected = _selectedTab == idx;
-      return GestureDetector(
-        onTap: () => setState(() => _selectedTab = idx),
-        child: Container(
-          margin: const EdgeInsets.only(right: 8),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: BoxDecoration(
-            color: selected ? Colors.orange.shade600 : Colors.white,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: selected ? Colors.orange.shade600 : const Color(0xFFE8EAEC),
+  Widget _accountTab() {
+    return SafeArea(
+      child: SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                /// --- Profile Header ---
+                _buildProfileHeader(),
+
+                const SizedBox(height: 32),
+
+                /// --- Account Settings Heading ---
+                const Text(
+                  "Options",
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                /// --- Account Options ---
+                _buildAccountOptions(),
+
+                const SizedBox(height: 24),
+
+                /// --- Sign Out Button ---
+                _buildSignOutButton(),
+
+                // Add bottom padding to prevent overlap with bottom navigation
+                const SizedBox(height: 20),
+              ],
             ),
-            boxShadow: [
-              BoxShadow(
-                color: selected ? Colors.orange.shade50 : Colors.black.withOpacity(0.03),
-                blurRadius: selected ? 14 : 8,
-                offset: const Offset(0, 4),
-              ),
-            ],
           ),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: selected ? Colors.white : Colors.black87,
-              fontSize: 14,
-            ),
-          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfileHeader() {
+    if (_isLoadingProfile) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32.0),
+          child: CircularProgressIndicator(),
         ),
       );
     }
 
-    // Main Orders tab content
-    Widget _ordersTab() {
-      return SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
-                            children: [
-                              _pillTab("View Order", 0),
-                              _pillTab("Approve Order", 1),
-                              _pillTab("Reject Order", 2),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  Expanded(
-                    child: Container(
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(18),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.04),
-                            blurRadius: 18,
-                            offset: const Offset(0, 8),
-                          )
-                        ],
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(18.0),
-                        child: _authToken != null 
-                            ? _orderScreens[_selectedTab]
-                            : const Center(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    CircularProgressIndicator(),
-                                    SizedBox(height: 16),
-                                    Text('Loading...'),
-                                  ],
-                                ),
-                              ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+    if (_profileError != null) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.red.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.red.shade200),
+        ),
+        child: Column(
+          children: [
+            Icon(Icons.error_outline, color: Colors.red.shade600, size: 32),
+            const SizedBox(height: 8),
+            Text(
+              _profileError!,
+              style: TextStyle(color: Colors.red.shade700),
+              textAlign: TextAlign.center,
             ),
-          ),
+            const SizedBox(height: 12),
+            ElevatedButton(
+              onPressed: _loadUserProfile,
+              child: const Text('Retry'),
+            ),
+          ],
         ),
       );
     }
 
-    // Account tab UI
-    Widget _accountTab() {
-      return SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 560),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-                child: Column(
-                  children: [
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(18),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.04),
-                            blurRadius: 18,
-                            offset: const Offset(0, 8),
-                          )
-                        ],
-                      ),
-                      child: Column(
-                        children: [
-                          Container(
-                            height: 92,
-                            width: 92,
-                            decoration: BoxDecoration(
-                              color: Colors.orange.shade50,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(Icons.person, size: 46, color: Colors.orange.shade700),
-                          ),
-                          const SizedBox(height: 12),
-                          Text(widget.email, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                          const SizedBox(height: 8),
-                          Text(
-                            "Member since Jan 2023",
-                            style: TextStyle(color: Colors.black.withOpacity(0.6)),
-                          ),
-                          const SizedBox(height: 16),
-                          ElevatedButton.icon(
-                            onPressed: () {},
-                            icon: const Icon(Icons.mail_outline),
-                            label: const Text("Manage Account"),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.orange.shade600,
-                              foregroundColor: Colors.white,
-                              minimumSize: const Size(double.infinity, 48),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          OutlinedButton(
-                            onPressed: () async {
-                              final prefs = await SharedPreferences.getInstance();
-                              await prefs.remove('authToken');
-                              await prefs.remove('email');
+    // Extract user data from profile with better fallbacks
+    final firstName = _userProfile?['first_name'] ?? '';
+    final lastName = _userProfile?['last_name'] ?? '';
+    final fullName = '${firstName} ${lastName}'.trim();
+    final displayName = fullName.isNotEmpty ? fullName : 'Delivery Partner';
 
-                              if (!mounted) return;
+    final primaryNumber = _userProfile?['primary_number'] ?? '';
+    final phoneNumber = primaryNumber.isNotEmpty ? primaryNumber : 'Phone not available';
 
-                              // Navigate back to login screen and clear history stack
-                              Navigator.pushAndRemoveUntil(
-                                context,
-                                MaterialPageRoute(builder: (_) => const LoginScreen()),
-                                    (route) => false,
-                              );
-                            },
-                            child: const Text("Sign Out"),
-                            style: OutlinedButton.styleFrom(
-                              minimumSize: const Size(double.infinity, 48),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                          ),
-                        ],
+    final email = widget.email;
+    final profileImageUrl = _userProfile?['profile_picture'];
+    final rating = _userProfile?['rating'] ?? 0.0;
+    final status = _userProfile?['status'] ?? 'Unknown';
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Stack(
+          children: [
+            CircleAvatar(
+              radius: 40,
+              backgroundColor: Colors.grey.shade300,
+              backgroundImage: _profileImage != null
+                  ? FileImage(_profileImage!)
+                  : profileImageUrl != null && profileImageUrl.isNotEmpty
+                  ? NetworkImage(_getFullImageUrl(profileImageUrl)) as ImageProvider
+                  : const AssetImage("assets/images/default_profile.png") as ImageProvider,
+            ),
+            if (_isLoadingProfile)
+              Positioned.fill(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Center(
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                       ),
                     ),
-                    const SizedBox(height: 18),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 18),
-                            margin: const EdgeInsets.only(right: 8),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(14),
-                              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 6))],
-                            ),
-                            child: Column(
-                              children: const [
-                                Icon(Icons.shopping_basket_outlined, size: 28),
-                                SizedBox(height: 8),
-                                Text("Orders", style: TextStyle(fontWeight: FontWeight.w700)),
-                              ],
-                            ),
-                          ),
-                        ),
-                        Expanded(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 18),
-                            margin: const EdgeInsets.only(left: 8),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(14),
-                              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 6))],
-                            ),
-                            child: Column(
-                              children: const [
-                                Icon(Icons.mail_outline, size: 28),
-                                SizedBox(height: 8),
-                                Text("Messages", style: TextStyle(fontWeight: FontWeight.w700)),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                  ),
+                ),
+              ),
+            Positioned(
+              bottom: 0,
+              right: 0,
+              child: GestureDetector(
+                onTap: _isLoadingProfile ? null : _showImageSourceDialog,
+                child: Container(
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.orange,
+                  ),
+                  padding: const EdgeInsets.all(6),
+                  child: const Icon(Icons.edit, color: Colors.white, size: 16),
                 ),
               ),
             ),
-          ),
+          ],
         ),
-      );
-    }
-
-    final bottomTabs = [
-      _ordersTab(),
-      _accountTab(),
-    ];
-
-    Widget _customBottomNav() {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        child: Container(
-          height: 72,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 18, offset: const Offset(0, 8))],
-          ),
-          child: Row(
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(30),
-                  onTap: () => setState(() => _currentIndex = 0),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut,
-                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                    decoration: BoxDecoration(
-                      gradient: _currentIndex == 0
-                          ? LinearGradient(
-                        colors: [Colors.orange.shade600, Colors.deepOrangeAccent],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      )
-                          : null,
-                      color: _currentIndex == 0 ? null : Colors.white.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(30),
-                      border: Border.all(
-                        color: _currentIndex == 0 ? Colors.transparent : Colors.grey.shade300,
-                        width: 1.2,
-                      ),
-                      boxShadow: _currentIndex == 0
-                          ? [
-                        BoxShadow(
-                          color: Colors.orange.withOpacity(0.4),
-                          blurRadius: 12,
-                          offset: Offset(0, 4),
-                        ),
-                      ]
-                          : [],
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          _currentIndex == 0 ? Icons.shopping_basket : Icons.shopping_basket_outlined,
-                          color: _currentIndex == 0 ? Colors.white : Colors.black87,
-                        ),
-                        const SizedBox(width: 10),
-                        Text(
-                          "Orders",
-                          style: TextStyle(
-                            color: _currentIndex == 0 ? Colors.white : Colors.black87,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 16,
-                          ),
-                        ),
-                      ],
-                    ),
+              Text(
+                displayName,
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                phoneNumber,
+                style: const TextStyle(fontSize: 14, color: Colors.black54),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                email,
+                style: const TextStyle(fontSize: 14, color: Colors.black54),
+              ),
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: _getStatusColor(status).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _getStatusColor(status)),
+                ),
+                child: Text(
+                  _getStatusText(status),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: _getStatusColor(status),
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(30),
-                  onTap: () => setState(() => _currentIndex = 1),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut,
-                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                    decoration: BoxDecoration(
-                      gradient: _currentIndex == 1
-                          ? LinearGradient(
-                        colors: [Colors.orange.shade600, Colors.deepOrangeAccent],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      )
-                          : null,
-                      color: _currentIndex == 1 ? null : Colors.white.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(30),
-                      border: Border.all(
-                        color: _currentIndex == 1 ? Colors.transparent : Colors.grey.shade300,
-                        width: 1.2,
-                      ),
-                      boxShadow: _currentIndex == 1
-                          ? [
-                        BoxShadow(
-                          color: Colors.orange.withOpacity(0.4),
-                          blurRadius: 12,
-                          offset: Offset(0, 4),
-                        ),
-                      ]
-                          : [],
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          _currentIndex == 1 ? Icons.person : Icons.person_outline,
-                          color: _currentIndex == 1 ? Colors.white : Colors.black87,
-                        ),
-                        const SizedBox(width: 10),
-                        Text(
-                          "Account",
-                          style: TextStyle(
-                            color: _currentIndex == 1 ? Colors.white : Colors.black87,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 16,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return Scaffold(
-      backgroundColor: const Color(0xFFF6F7F9),
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(72),
-        child: AppBar(
-          backgroundColor: Colors.white,
-          elevation: 0,
-          automaticallyImplyLeading: false,
-          title: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
+              const SizedBox(height: 6),
               Row(
-                children: [
-                  Image.asset("assets/images/logo.jpeg", height: 100),
-                ],
+                children: List.generate(5, (index) {
+                  return Icon(
+                    index < rating ? Icons.star : Icons.star_border,
+                    color: Colors.orange.shade600,
+                    size: 20,
+                  );
+                }),
               ),
-              IconButton(
-                icon: const Icon(Icons.notifications_none, color: Colors.black87),
-                onPressed: () {},
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAccountOptions() {
+    return Column(
+      children: [
+        _buildOptionItem(
+          icon: Icons.person_outline,
+          title: "Edit Profile",
+          onTap: () {
+            _navigateToEditProfile();
+          },
+        ),
+        const SizedBox(height: 12),
+        _buildOptionItem(
+          icon: Icons.event_busy,
+          title: "Leave Requests",
+          onTap: () {
+            _navigateToLeaveRequests();
+          },
+        ),
+        const SizedBox(height: 12),
+        _buildOptionItem(
+          icon: Icons.monetization_on,
+          title: "Dashboard Earnings",
+          onTap: () {
+            _navigateToEarning();
+          },
+        ),
+        const SizedBox(height: 12),
+        _buildOptionItem(
+          icon: Icons.help_outline,
+          title: "Help & Support",
+          onTap: () {
+            // TODO: Navigate to Help screen
+            print("Help & Support tapped");
+          },
+        ),
+        const SizedBox(height: 12),
+        _buildOptionItem(
+          icon: Icons.privacy_tip_outlined,
+          title: "Privacy Policy",
+          onTap: () {
+            // TODO: Navigate to Privacy Policy screen
+            print("Privacy Policy tapped");
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOptionItem({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.shade300),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: Colors.orange.shade700),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
+            ),
+            Icon(Icons.chevron_right, color: Colors.grey.shade600),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSignOutButton() {
+    return OutlinedButton(
+      onPressed: () async {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove('authToken');
+        await prefs.remove('email');
+        if (!mounted) return;
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+              (route) => false,
+        );
+      },
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size(double.infinity, 48),
+        side: BorderSide(color: Colors.red.shade400),
+      ),
+      child: Text(
+        "Sign Out",
+        style: TextStyle(color: Colors.red.shade600),
+      ),
+    );
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'approved':
+        return Colors.green;
+      case 'pending':
+        return Colors.orange;
+      case 'rejected':
+        return Colors.red;
+      case 'profile_incomplete':
+        return Colors.blue;
+      case 'documents_pending_verification':
+        return Colors.purple;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  String _getStatusText(String status) {
+    switch (status.toLowerCase()) {
+      case 'approved':
+        return 'Active';
+      case 'pending':
+        return 'Pending Approval';
+      case 'rejected':
+        return 'Rejected';
+      case 'profile_incomplete':
+        return 'Profile Incomplete';
+      case 'documents_pending_verification':
+        return 'Documents Pending';
+      default:
+        return status;
+    }
+  }
+
+  // Navigate to edit profile screen
+  Future<void> _navigateToEditProfile() async {
+    if (_authToken == null) return;
+
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EditProfileScreen(
+          authToken: _authToken!,
+          currentProfile: _userProfile,
+          onProfileUpdated: (updatedProfile) {
+            setState(() {
+              _userProfile = updatedProfile;
+            });
+          },
+        ),
+      ),
+    );
+
+    // Refresh profile data after returning from edit screen
+    if (result != null) {
+      await _loadUserProfile();
+    }
+  }
+
+  // Navigate to leave requests screen
+  Future<void> _navigateToLeaveRequests() async {
+    if (_authToken == null) return;
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => LeaveRequestScreen(
+          authToken: _authToken!,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _navigateToEarning() async {
+    if (_authToken == null) return;
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EarningsManagementScreen(
+          authToken: _authToken!,
+        ),
+      ),
+    );
+  }
+
+  Widget _customBottomNav() {
+    return Container(
+      height: 80,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(24),
+          topRight: Radius.circular(24),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          _buildNavItem(
+            icon: Icons.shopping_basket_outlined,
+            label: "Orders",
+            index: 0,
+          ),
+          _buildNavItem(
+            icon: Icons.person_outline,
+            label: "Account",
+            index: 1,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNavItem({
+    required IconData icon,
+    required String label,
+    required int index,
+  }) {
+    final bool isSelected = _currentIndex == index;
+    final color = isSelected ? Colors.orange.shade600 : Colors.grey.shade600;
+
+    return Expanded(
+      child: InkWell(
+        onTap: () => setState(() => _currentIndex = index),
+        child: Container(
+          color: Colors.transparent,
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: color, size: 28),
+              const SizedBox(height: 1),
+              Text(
+                label,
+                style: TextStyle(
+                  color: color,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  fontSize: 12,
+                ),
+              ),
+              if (isSelected)
+                Container(
+                  margin: const EdgeInsets.only(top: 6),
+                  height: 3,
+                  width: 24,
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade600,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
             ],
           ),
         ),
       ),
-      body: bottomTabs[_currentIndex],
-      bottomNavigationBar: SafeArea(child: _customBottomNav()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext ctx) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        automaticallyImplyLeading: false,
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Image.asset("assets/images/logo.jpeg", height: 110),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                IconButton(
+                  iconSize: 30,
+                  icon: const Icon(Icons.notifications_none, color: Colors.black87),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => Scaffold(
+                          appBar: AppBar(
+                            title: const Text('Notifications'),
+                            backgroundColor: Colors.blue,
+                            foregroundColor: Colors.white,
+                          ),
+                          body: const Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.notifications,
+                                  size: 80,
+                                  color: Colors.blue,
+                                ),
+                                SizedBox(height: 20),
+                                Text(
+                                  'Notification Screen',
+                                  style: TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                SizedBox(height: 10),
+                                Text(
+                                  'This is where notifications will be displayed',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1.2),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      body: _currentIndex == 0 ? _ordersTab() : _accountTab(),
+      bottomNavigationBar: _customBottomNav(),
     );
   }
 }

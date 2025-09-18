@@ -50,8 +50,14 @@ def get_wishlist():
     """Get customer's wishlist items"""
     try:
         customer_id = request.customer_id
+        
         wishlist_items = get_customer_wishlist(customer_id)
-        data = {"wishlist_items": [item.to_dict() for item in wishlist_items]}
+        total_count = get_wishlist_count(customer_id)
+        
+        data = {
+            "wishlist_items": [item.to_dict() for item in wishlist_items],
+            "total_count": total_count
+        }
         enc = encrypt_payload(data)
         return jsonify({"success": True, "encrypted_data": enc})
     except Exception as e:

@@ -101,23 +101,44 @@ def get_delivery_orders():
             if order.customer:
                 order_data['customer'] = {
                     'id': order.customer.id,
-                    'name': order.customer.username,
-                    'email': order.customer.email,
-                    'phone': order.customer.phone_number_enc.decode('utf-8') if order.customer.phone_number_enc else None
+                    'name': order.customer.username or 'Unknown Customer',
+                    'email': order.customer.email or 'No email',
+                    'phone': order.customer.phone_number_enc.decode('utf-8') if order.customer.phone_number_enc else 'No phone'
+                }
+            else:
+                order_data['customer'] = {
+                    'id': None,
+                    'name': 'Unknown Customer',
+                    'email': 'No email',
+                    'phone': 'No phone'
                 }
             
             # Add order items with product information including barcode
             order_items = []
             for item in order.order_items:
                 item_data = item.as_dict()
-                # Add product information including barcode
+                # Add product information including barcode and image_url
                 if item.product:
                     item_data['product'] = {
                         'id': item.product.id,
-                        'name': item.product.pname,
-                        'barcode': item.product.barcode,
-                        'price': item.product.price,
-                        'image': item.product.image
+                        'name': item.product.pname or 'Unknown Product',
+                        'barcode': item.product.barcode or 'N/A',
+                        'price': item.product.price or 0.0,
+                        'image': item.product.image or '',
+                        'image_url': item.product.image_url if hasattr(item.product, 'image_url') and item.product.image_url else (item.product.image or ''),
+                        'color': getattr(item.product, 'color', None),
+                        'size': getattr(item.product, 'size', None)
+                    }
+                else:
+                    item_data['product'] = {
+                        'id': None,
+                        'name': 'Unknown Product',
+                        'barcode': 'N/A',
+                        'price': 0.0,
+                        'image': '',
+                        'image_url': '',
+                        'color': None,
+                        'size': None
                     }
                 order_items.append(item_data)
             order_data['order_items'] = order_items
@@ -156,9 +177,9 @@ def get_delivery_exchanges():
                 print(f"🔍 DEBUG: Found customer for exchange {exchange.id}")
                 exchange_data['customer'] = {
                     'id': exchange.order.customer.id,
-                    'name': exchange.order.customer.username,
-                    'email': exchange.order.customer.email,
-                    'phone': exchange.order.customer.phone_number_enc.decode('utf-8') if exchange.order.customer.phone_number_enc else None
+                    'name': exchange.order.customer.username or 'Unknown Customer',
+                    'email': exchange.order.customer.email or 'No email',
+                    'phone': exchange.order.customer.phone_number_enc.decode('utf-8') if exchange.order.customer.phone_number_enc else 'No phone'
                 }
             else:
                 print(f"🔍 DEBUG: No customer data for exchange {exchange.id}")
@@ -169,10 +190,24 @@ def get_delivery_exchanges():
                         print(f"🔍 DEBUG: Found customer via customer_id for exchange {exchange.id}")
                         exchange_data['customer'] = {
                             'id': customer.id,
-                            'name': customer.username,
-                            'email': customer.email,
-                            'phone': customer.phone_number_enc.decode('utf-8') if customer.phone_number_enc else None
+                            'name': customer.username or 'Unknown Customer',
+                            'email': customer.email or 'No email',
+                            'phone': customer.phone_number_enc.decode('utf-8') if customer.phone_number_enc else 'No phone'
                         }
+                    else:
+                        exchange_data['customer'] = {
+                            'id': None,
+                            'name': 'Unknown Customer',
+                            'email': 'No email',
+                            'phone': 'No phone'
+                        }
+                else:
+                    exchange_data['customer'] = {
+                        'id': None,
+                        'name': 'Unknown Customer',
+                        'email': 'No email',
+                        'phone': 'No phone'
+                    }
             
             # Add order information for address
             if exchange.order:
@@ -206,14 +241,61 @@ def get_delivery_exchanges():
                     print(f"🔍 DEBUG: Adding delivery_address from exchange {exchange.id}")
                     exchange_data['delivery_address'] = exchange.delivery_address
             
-            # Add product information
+            # Add product information (the product being exchanged)
             if exchange.product:
-                exchange_data['product'] = {
+                # Original product (what they want to exchange from)
+                exchange_data['original_product'] = {
                     'id': exchange.product.id,
-                    'name': exchange.product.pname,
-                    'barcode': exchange.product.barcode,
-                    'price': exchange.product.price
+                    'name': exchange.product.pname or 'Unknown Product',
+                    'barcode': exchange.product.barcode or 'N/A',
+                    'price': exchange.product.price or 0.0,
+                    'image_url': exchange.product.image_url if hasattr(exchange.product, 'image_url') and exchange.product.image_url else (exchange.product.image or ''),
+                    'color': exchange.old_color or getattr(exchange.product, 'color', None),
+                    'size': exchange.old_size or getattr(exchange.product, 'size', None)
                 }
+                
+                # Exchange product (what they want to exchange to - same product, different size/color)
+                exchange_data['exchange_product'] = {
+                    'id': exchange.product.id,
+                    'name': exchange.product.pname or 'Unknown Product',
+                    'barcode': exchange.product.barcode or 'N/A',
+                    'price': exchange.product.price or 0.0,
+                    'image_url': exchange.product.image_url if hasattr(exchange.product, 'image_url') and exchange.product.image_url else (exchange.product.image or ''),
+                    'color': exchange.new_color or getattr(exchange.product, 'color', None),
+                    'size': exchange.new_size or getattr(exchange.product, 'size', None)
+                }
+            else:
+                exchange_data['original_product'] = {
+                    'id': None,
+                    'name': 'Unknown Product',
+                    'barcode': 'N/A',
+                    'price': 0.0,
+                    'image_url': '',
+                    'color': exchange.old_color,
+                    'size': exchange.old_size
+                }
+                exchange_data['exchange_product'] = {
+                    'id': None,
+                    'name': 'Unknown Product',
+                    'barcode': 'N/A',
+                    'price': 0.0,
+                    'image_url': '',
+                    'color': exchange.new_color,
+                    'size': exchange.new_size
+                }
+            
+            # Add reason for exchange
+            if hasattr(exchange, 'reason') and exchange.reason:
+                exchange_data['reason'] = exchange.reason
+            
+            # Add quantity information
+            exchange_data['old_quantity'] = exchange.old_quantity or 1
+            exchange_data['new_quantity'] = exchange.new_quantity or 1
+            
+            # Add additional payment information
+            if hasattr(exchange, 'additional_payment_required') and exchange.additional_payment_required:
+                exchange_data['additional_payment_required'] = True
+                exchange_data['additional_amount'] = exchange.additional_amount or 0.0
             result.append(exchange_data)
         
         return jsonify({
@@ -275,18 +357,44 @@ def get_cancelled_order_items():
                 if item.order.customer:
                     item_data['customer'] = {
                         'id': item.order.customer.id,
-                        'name': item.order.customer.username,
-                        'email': item.order.customer.email,
-                        'phone': item.order.customer.phone_number_enc.decode('utf-8') if item.order.customer.phone_number_enc else None
+                        'name': item.order.customer.username or 'Unknown Customer',
+                        'email': item.order.customer.email or 'No email',
+                        'phone': item.order.customer.phone_number_enc.decode('utf-8') if item.order.customer.phone_number_enc else 'No phone'
+                    }
+                else:
+                    item_data['customer'] = {
+                        'id': None,
+                        'name': 'Unknown Customer',
+                        'email': 'No email',
+                        'phone': 'No phone'
                     }
             # Add product information
             if item.product:
                 item_data['product'] = {
                     'id': item.product.id,
-                    'name': item.product.pname,
-                    'barcode': item.product.barcode,
-                    'price': item.product.price
+                    'name': item.product.pname or 'Unknown Product',
+                    'barcode': item.product.barcode or 'N/A',
+                    'price': item.product.price or 0.0,
+                    'image_url': item.product.image_url if hasattr(item.product, 'image_url') and item.product.image_url else (item.product.image or ''),
+                    'color': getattr(item.product, 'color', None),
+                    'size': getattr(item.product, 'size', None)
                 }
+            else:
+                item_data['product'] = {
+                    'id': None,
+                    'name': 'Unknown Product',
+                    'barcode': 'N/A',
+                    'price': 0.0,
+                    'image_url': '',
+                    'color': None,
+                    'size': None
+                }
+            
+            # Add cancellation reason and details
+            if hasattr(item, 'cancellation_reason') and item.cancellation_reason:
+                item_data['reason'] = item.cancellation_reason
+            if hasattr(item, 'cancelled_at') and item.cancelled_at:
+                item_data['cancelled_at'] = item.cancelled_at.isoformat() if hasattr(item.cancelled_at, 'isoformat') else str(item.cancelled_at)
             result.append(item_data)
         
         return jsonify({
@@ -968,32 +1076,52 @@ def upload_delivery_photo():
                 "error": f"Invalid base64 image data: {str(e)}"
             }), 400
         
-        # Save image to file system (you can modify this to save to cloud storage)
-        import os
+        # Upload image to S3
+        from utils.s3_service import S3Service
         from datetime import datetime
+        import io
+        from werkzeug.datastructures import FileStorage
         
-        # Create delivery_photos directory if it doesn't exist
-        photos_dir = "delivery_photos"
-        if not os.path.exists(photos_dir):
-            os.makedirs(photos_dir)
-        
-        # Generate filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{item_type}_{item_id}_{timestamp}.jpg"
-        filepath = os.path.join(photos_dir, filename)
-        
-        # Save image
-        with open(filepath, 'wb') as f:
-            f.write(image_data)
-        
-        # TODO: Store photo path in database
-        # For now, just return success
-        
-        return jsonify({
-            "success": True,
-            "message": "Delivery photo uploaded successfully",
-            "photo_path": filepath
-        }), 200
+        try:
+            s3_service = S3Service()
+            
+            # Generate filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{item_type}_{item_id}_{timestamp}.jpg"
+            
+            # Create a FileStorage-like object for S3 upload
+            file_obj = FileStorage(
+                stream=io.BytesIO(image_data),
+                filename=filename,
+                content_type='image/jpeg'
+            )
+            
+            # Upload to S3
+            s3_url = s3_service.upload_file(
+                file=file_obj,
+                file_id=f"{item_type}_{item_id}_{timestamp}",
+                file_type="image",
+                folder_type="document"  # Use document folder for delivery photos
+            )
+            
+            if not s3_url:
+                return jsonify({
+                    "success": False,
+                    "error": "Failed to upload photo to S3"
+                }), 500
+            
+            return jsonify({
+                "success": True,
+                "message": "Delivery photo uploaded successfully to S3",
+                "photo_url": s3_url
+            }), 200
+            
+        except Exception as s3_error:
+            print(f"S3 upload error: {str(s3_error)}")
+            return jsonify({
+                "success": False,
+                "error": f"Failed to upload photo to S3: {str(s3_error)}"
+            }), 500
         
     except Exception as e:
         print(f"Error uploading delivery photo: {str(e)}")

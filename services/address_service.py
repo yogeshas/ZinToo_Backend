@@ -19,10 +19,13 @@ def create_address(uid, data):
             uid=uid,
             name=data.get("name", "").strip(),
             type=data.get("type", "home"),
+            address_line1=data.get("address_line1", "").strip(),
+            address_line2=data.get("address_line2", "").strip(),
             city=data.get("city", "").strip(),
             state=data.get("state", "").strip(),
             country=data.get("country", "").strip(),
             zip_code=data.get("zip_code") or data.get("zipCode") or "",
+            landmark=data.get("landmark", "").strip(),
         )
         
         print(f"[ADDRESS SERVICE] Address object created: {address}")
@@ -73,7 +76,7 @@ def update_address(aid, data):
             return None
         
         # Update allowed fields
-        allowed_fields = ["name", "type", "city", "state", "country", "zip_code"]
+        allowed_fields = ["name", "type", "address_line1", "address_line2", "city", "state", "country", "zip_code", "landmark"]
         for field in allowed_fields:
             if field in data and data[field] is not None:
                 if field == "zip_code":

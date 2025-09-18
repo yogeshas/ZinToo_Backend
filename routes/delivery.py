@@ -14,8 +14,10 @@ from services.delivery_onboarding_service import (
 from services.delivery_auth_service import verify_auth_token
 from utils.auth import require_admin_auth
 from utils.crypto import encrypt_payload, decrypt_payload
+from utils.sns_service import sns_service
 from models.order import Order
 from models.delivery_onboarding import DeliveryOnboarding
+from models.delivery_auth import DeliveryGuyAuth
 from extensions import db
 from datetime import datetime
 import os
@@ -114,6 +116,12 @@ def upload_delivery_documents():
 def view_document(file_path):
     """View uploaded documents"""
     try:
+        # Check if it's an S3 URL (starts with http/https)
+        if file_path.startswith(('http://', 'https://')):
+            # Redirect to S3 URL for direct access
+            from flask import redirect
+            return redirect(file_path)
+        
         # Security check - ensure file path is within allowed directory
         allowed_path = os.path.join('assets', 'onboarding')
         
@@ -165,18 +173,9 @@ def list_delivery_documents(current_admin, onboarding_id):
         for field, display_name in document_fields.items():
             file_path = getattr(onboarding, field, None)
             if file_path:
-                # Check if file exists - handle both relative and absolute paths
-                if file_path.startswith('assets/onboarding/'):
-                    full_path = file_path
-                elif file_path.startswith('assets/'):
-                    full_path = file_path
-                else:
-                    full_path = os.path.join('assets', 'onboarding', file_path)
-                
-                if os.path.exists(full_path):
-                    # Get file info
-                    file_stat = os.stat(full_path)
-                    file_size = file_stat.st_size
+                # Check if it's an S3 URL (starts with http/https)
+                if file_path.startswith(('http://', 'https://')):
+                    # S3 URL - no need to check local file existence
                     file_ext = os.path.splitext(file_path)[1].lower()
                     
                     # Determine file type
@@ -190,11 +189,42 @@ def list_delivery_documents(current_admin, onboarding_id):
                     documents[field] = {
                         'display_name': display_name,
                         'file_path': file_path,
-                        'file_size': file_size,
+                        'file_size': 0,  # S3 file size not available without additional API call
                         'file_type': file_type,
                         'file_extension': file_ext,
-                        'uploaded_at': file_stat.st_mtime
+                        'uploaded_at': 0  # S3 upload time not available without additional API call
                     }
+                else:
+                    # Local file - check if file exists
+                    if file_path.startswith('assets/onboarding/'):
+                        full_path = file_path
+                    elif file_path.startswith('assets/'):
+                        full_path = file_path
+                    else:
+                        full_path = os.path.join('assets', 'onboarding', file_path)
+                    
+                    if os.path.exists(full_path):
+                        # Get file info
+                        file_stat = os.stat(full_path)
+                        file_size = file_stat.st_size
+                        file_ext = os.path.splitext(file_path)[1].lower()
+                        
+                        # Determine file type
+                        if file_ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
+                            file_type = 'image'
+                        elif file_ext in ['.pdf']:
+                            file_type = 'pdf'
+                        else:
+                            file_type = 'document'
+                        
+                        documents[field] = {
+                            'display_name': display_name,
+                            'file_path': file_path,
+                            'file_size': file_size,
+                            'file_type': file_type,
+                            'file_extension': file_ext,
+                            'uploaded_at': file_stat.st_mtime
+                        }
         
         data = {"documents": documents}
         enc = encrypt_payload(data)
@@ -431,8 +461,18 @@ def create_onboarding_mobile(data, email):
 def get_available_delivery_guys(current_admin):
     """Get all available delivery guys (approved status only)"""
     try:
+        print(f"🔍 [DELIVERY GUYS] Fetching available delivery guys...")
+        
         # Get only approved delivery guys
         available_guys = DeliveryOnboarding.query.filter_by(status="approved").all()
+        print(f"🔍 [DELIVERY GUYS] Found {len(available_guys)} approved delivery guys")
+        
+        # Also check all delivery guys regardless of status for debugging
+        all_guys = DeliveryOnboarding.query.all()
+        print(f"🔍 [DELIVERY GUYS] Total delivery guys in database: {len(all_guys)}")
+        
+        for guy in all_guys:
+            print(f"🔍 [DELIVERY GUYS] Guy {guy.id}: {guy.first_name} {guy.last_name} - Status: {guy.status}")
         
         available_guys_data = []
         for guy in available_guys:
@@ -456,12 +496,18 @@ def get_available_delivery_guys(current_admin):
                 "created_at": guy.created_at.isoformat() if guy.created_at else None
             }
             available_guys_data.append(guy_data)
+            print(f"🔍 [DELIVERY GUYS] Added guy: {guy_data['name']} (ID: {guy.id})")
         
-        data = {"available_delivery_guys": available_guys_data}
+        # Return both formats for compatibility
+        data = {
+            "delivery_guys": available_guys_data,  # Frontend expects this
+            "available_delivery_guys": available_guys_data  # Keep original for backward compatibility
+        }
         enc = encrypt_payload(data)
+        print(f"🔍 [DELIVERY GUYS] Returning {len(available_guys_data)} delivery guys")
         return jsonify({"success": True, "encrypted_data": enc}), 200
     except Exception as e:
-        print(f"Get available delivery guys error: {str(e)}")
+        print(f"❌ [DELIVERY GUYS] Get available delivery guys error: {str(e)}")
         return jsonify({"error": "Internal server error"}), 500
 
 @delivery_bp.route("/orders/unassigned", methods=["GET"])
@@ -1306,6 +1352,42 @@ def assign_order_route(current_admin, order_id):
             order.delivery_notes = notes
         
         db.session.commit()
+        
+        # Send push notification to delivery guy
+        try:
+            # Get delivery guy auth record for device token
+            auth_record = DeliveryGuyAuth.query.filter_by(delivery_guy_id=onboarding_id).first()
+            
+            if auth_record and auth_record.has_valid_device_token():
+                # Prepare order details for notification
+                order_details = {
+                    "id": order.id,
+                    "order_number": order.order_number,
+                    "customer_name": order.customer.name if order.customer else "Customer",
+                    "delivery_address": order.delivery_address,
+                    "total_amount": order.total_amount,
+                    "scheduled_time": order.scheduled_time.isoformat() if order.scheduled_time else None,
+                    "delivery_type": order.delivery_type,
+                    "notes": notes or ""
+                }
+                
+                # Send notification
+                notification_result = sns_service.send_delivery_assignment_notification(
+                    auth_record.device_token,
+                    auth_record.platform,
+                    order_details
+                )
+                
+                if notification_result["success"]:
+                    print(f"✅ Push notification sent to delivery guy {onboarding_id}")
+                else:
+                    print(f"⚠️ Failed to send push notification: {notification_result['message']}")
+            else:
+                print(f"⚠️ No valid device token found for delivery guy {onboarding_id}")
+                
+        except Exception as e:
+            print(f"⚠️ Error sending push notification: {str(e)}")
+            # Don't fail the assignment if notification fails
         
         order_dict = order.as_dict()
         enc = encrypt_payload({"order": order_dict})

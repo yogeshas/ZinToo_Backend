@@ -24,14 +24,14 @@ def generate_delivery_barcode_image(barcode_text, product_name=None, product_id=
         # Generate barcode image with maximum scanning quality
         barcode_buffer = io.BytesIO()
         barcode.write(barcode_buffer, options={
-            'module_width': 0.8,  # Wider bars for better scanning
-            'module_height': 25.0,  # Taller bars for easier scanning
-            'quiet_zone': 10.0,  # Larger quiet zone
-            'font_size': 14,  # Larger font for readability
-            'text_distance': 10.0,  # More space between barcode and text
+            'module_width': 0.6,  # Slightly smaller bars to fit better
+            'module_height': 20.0,  # Shorter bars to leave room for text
+            'quiet_zone': 6.0,  # Smaller quiet zone
+            'font_size': 12,  # Smaller font for barcode
+            'text_distance': 5.0,  # Less space between barcode and text
             'background': 'white',
             'foreground': 'black',
-            'write_text': True,
+            'write_text': False,  # Don't write text in barcode, we'll add it separately
             'center_text': True,
             'dpi': 300,  # High DPI for crisp printing
         })
@@ -44,10 +44,10 @@ def generate_delivery_barcode_image(barcode_text, product_name=None, product_id=
         sticker_height = 300
         sticker = Image.new('RGB', (sticker_width, sticker_height), 'white')
         
-        # Calculate positions
+        # Calculate positions - leave more room for text below
         barcode_width, barcode_height = barcode_image.size
         barcode_x = (sticker_width - barcode_width) // 2
-        barcode_y = 30
+        barcode_y = 20  # Start higher to leave room for text below
         
         # Paste barcode onto sticker
         sticker.paste(barcode_image, (barcode_x, barcode_y))
@@ -67,13 +67,21 @@ def generate_delivery_barcode_image(barcode_text, product_name=None, product_id=
                 font_small = ImageFont.truetype("arial.ttf", 14)
             except:
                 try:
-                    font_large = ImageFont.load_default()
-                    font_medium = ImageFont.load_default()
-                    font_small = ImageFont.load_default()
+                    # Try DejaVu Sans font (common on Linux)
+                    font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 24)
+                    font_medium = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 18)
+                    font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
                 except:
-                    font_large = None
-                    font_medium = None
-                    font_small = None
+                    try:
+                        # Try Liberation Sans font
+                        font_large = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", 24)
+                        font_medium = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", 18)
+                        font_small = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", 14)
+                    except:
+                        # Use default font with larger size
+                        font_large = ImageFont.load_default()
+                        font_medium = ImageFont.load_default()
+                        font_small = ImageFont.load_default()
         
         # Add company name at top with delivery branding
         company_text = "ZinToo Delivery"
@@ -85,11 +93,19 @@ def generate_delivery_barcode_image(barcode_text, product_name=None, product_id=
         
         # Add barcode number below barcode with better visibility
         barcode_number_y = barcode_y + barcode_height + 15
+        
+        # Make sure the text fits within the image bounds
+        if barcode_number_y > sticker_height - 30:
+            barcode_number_y = sticker_height - 30
+        
         if font_medium:
             barcode_bbox = draw.textbbox((0, 0), barcode_text, font=font_medium)
             barcode_text_width = barcode_bbox[2] - barcode_bbox[0]
             barcode_text_x = (sticker_width - barcode_text_width) // 2
             draw.text((barcode_text_x, barcode_number_y), barcode_text, fill='black', font=font_medium)
+        else:
+            # Fallback: draw text without font
+            draw.text((sticker_width//2, barcode_number_y), barcode_text, fill='black')
         
         # Add product info if provided
         y_offset = barcode_number_y + 30

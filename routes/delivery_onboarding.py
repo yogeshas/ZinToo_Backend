@@ -57,13 +57,56 @@ def submit_onboarding():
         # Get form data
         data = request.form.to_dict()
         
-        # Handle file uploads
+        # Handle file uploads - all document fields
+        print(f"\n🔍 [DEBUG SUBMIT ONBOARDING] Processing files for email: {email}")
+        print(f"🔍 [DEBUG] Available files: {list(request.files.keys())}")
+        print(f"🔍 [DEBUG] Form data received: {data}")
+        
+        # Document photo fields (for S3 upload) - using existing column names
+        doc_photo_fields = ["aadhar_card", "pan_card", "dl", "rc_card", "bank_passbook"]
+        
+        print(f"🔍 [DEBUG] Checking {len(doc_photo_fields)} document fields: {doc_photo_fields}")
+        
+        for field in doc_photo_fields:
+            if field in request.files:
+                file = request.files[field]
+                print(f"🔍 [DEBUG] Found {field} file: filename='{file.filename}', content_type='{file.content_type}', size={file.content_length if hasattr(file, 'content_length') else 'unknown'}")
+                
+                if file.filename:
+                    print(f"🔍 [DEBUG] Processing {field}: {file.filename}")
+                    uploaded_path = upload_file(file, "onboarding/documents")
+                    if uploaded_path:
+                        data[field] = uploaded_path
+                        print(f"✅ [SUCCESS] Uploaded {field} to S3: {uploaded_path}")
+                        print(f"🔍 [DEBUG] Updated data[{field}] = {uploaded_path}")
+                    else:
+                        print(f"❌ [ERROR] Failed to upload {field}")
+                else:
+                    print(f"⚠️ [WARNING] {field} file has no filename")
+            else:
+                print(f"ℹ️ [INFO] {field} not found in request files")
+        
+        # Handle profile picture separately (different folder)
         if 'profile_picture' in request.files:
             profile_pic = request.files['profile_picture']
+            print(f"🔍 [DEBUG] Found profile_picture file: filename='{profile_pic.filename}', content_type='{profile_pic.content_type}', size={profile_pic.content_length if hasattr(profile_pic, 'content_length') else 'unknown'}")
+            
             if profile_pic.filename:
+                print(f"🔍 [DEBUG] Processing profile_picture: {profile_pic.filename}")
                 profile_path = upload_file(profile_pic, "onboarding/profile")
-                data['profile_picture'] = profile_path
-                print(f"Profile picture uploaded: {profile_path}")
+                if profile_path:
+                    data['profile_picture'] = profile_path
+                    print(f"✅ [SUCCESS] Uploaded profile_picture to S3: {profile_path}")
+                    print(f"🔍 [DEBUG] Updated data[profile_picture] = {profile_path}")
+                else:
+                    print(f"❌ [ERROR] Failed to upload profile_picture")
+            else:
+                print(f"⚠️ [WARNING] profile_picture file has no filename")
+        else:
+            print(f"ℹ️ [INFO] profile_picture not found in request files")
+        
+        print(f"🔍 [DEBUG] Final data to be saved: {data}")
+        print(f"🔍 [DEBUG] Images in data: {[(k, v) for k, v in data.items() if k in ['profile_picture', 'aadhar_card', 'pan_card', 'dl', 'rc_card', 'bank_passbook']]}")
         
         # Create onboarding with mobile app data structure
         result = create_onboarding_mobile(data, email)
@@ -317,24 +360,56 @@ def update_user_onboarding():
         # Get form data
         data = request.form.to_dict()
         
-        # Handle file uploads
+        # Handle file uploads - all document fields
+        print(f"\n🔍 [DEBUG UPDATE ONBOARDING] Processing files for email: {email}")
+        print(f"🔍 [DEBUG] Available files: {list(request.files.keys())}")
+        print(f"🔍 [DEBUG] Form data received: {data}")
+        
+        # Document photo fields (for S3 upload) - using existing column names
+        doc_photo_fields = ["aadhar_card", "pan_card", "dl", "rc_card", "bank_passbook"]
+        
+        print(f"🔍 [DEBUG] Checking {len(doc_photo_fields)} document fields: {doc_photo_fields}")
+        
+        for field in doc_photo_fields:
+            if field in request.files:
+                file = request.files[field]
+                print(f"🔍 [DEBUG] Found {field} file: filename='{file.filename}', content_type='{file.content_type}', size={file.content_length if hasattr(file, 'content_length') else 'unknown'}")
+                
+                if file.filename:
+                    print(f"🔍 [DEBUG] Processing {field}: {file.filename}")
+                    uploaded_path = upload_file(file, "onboarding/documents")
+                    if uploaded_path:
+                        data[field] = uploaded_path
+                        print(f"✅ [SUCCESS] Uploaded {field} to S3: {uploaded_path}")
+                        print(f"🔍 [DEBUG] Updated data[{field}] = {uploaded_path}")
+                    else:
+                        print(f"❌ [ERROR] Failed to upload {field}")
+                else:
+                    print(f"⚠️ [WARNING] {field} file has no filename")
+            else:
+                print(f"ℹ️ [INFO] {field} not found in request files")
+        
+        # Handle profile picture separately (different folder)
         if 'profile_picture' in request.files:
             profile_pic = request.files['profile_picture']
+            print(f"🔍 [DEBUG] Found profile_picture file: filename='{profile_pic.filename}', content_type='{profile_pic.content_type}', size={profile_pic.content_length if hasattr(profile_pic, 'content_length') else 'unknown'}")
+            
             if profile_pic.filename:
+                print(f"🔍 [DEBUG] Processing profile_picture: {profile_pic.filename}")
                 profile_path = upload_file(profile_pic, "onboarding/profile")
-                data['profile_picture'] = profile_path
+                if profile_path:
+                    data['profile_picture'] = profile_path
+                    print(f"✅ [SUCCESS] Uploaded profile_picture to S3: {profile_path}")
+                    print(f"🔍 [DEBUG] Updated data[profile_picture] = {profile_path}")
+                else:
+                    print(f"❌ [ERROR] Failed to upload profile_picture")
+            else:
+                print(f"⚠️ [WARNING] profile_picture file has no filename")
+        else:
+            print(f"ℹ️ [INFO] profile_picture not found in request files")
         
-        if 'rc_card' in request.files:
-            rc_card = request.files['rc_card']
-            if rc_card.filename:
-                rc_path = upload_file(rc_card, "onboarding/documents")
-                data['rc_card'] = rc_path
-        
-        if 'bank_passbook' in request.files:
-            passbook = request.files['bank_passbook']
-            if passbook.filename:
-                passbook_path = upload_file(passbook, "onboarding/documents")
-                data['bank_passbook'] = passbook_path
+        print(f"🔍 [DEBUG] Final data to be updated: {data}")
+        print(f"🔍 [DEBUG] Images in data: {[(k, v) for k, v in data.items() if k in ['profile_picture', 'aadhar_card', 'pan_card', 'dl', 'rc_card', 'bank_passbook']]}")
         
         # Update onboarding
         result = update_onboarding(onboarding_id, data)
@@ -500,24 +575,78 @@ def upload_documents():
         email = user["email"]
 
         # --- Upload files ---
-        doc_fields = ["aadhar_card", "pan_card", "dl", "rc_card", "bank_passbook"]
+        # Document photo fields (for S3 upload) - using existing column names
+        doc_photo_fields = ["aadhar_card", "pan_card", "dl", "rc_card", "bank_passbook"]
         uploaded_docs = {}
 
-        for field in doc_fields:
+        print(f"\n🔍 [DEBUG DOCUMENT UPLOAD] Processing files for email: {email}")
+        print(f"🔍 [DEBUG] Available files: {list(request.files.keys())}")
+
+        # Handle document fields
+        for field in doc_photo_fields:
             if field in request.files:
                 file = request.files[field]
+                print(f"🔍 [DEBUG] Found {field} file: filename='{file.filename}', content_type='{file.content_type}', size={file.content_length if hasattr(file, 'content_length') else 'unknown'}")
+                
                 if file.filename:
+                    print(f"🔍 [DEBUG] Processing {field}: {file.filename}")
                     uploaded_docs[field] = upload_file(file, "onboarding/documents")
+                    if uploaded_docs[field]:
+                        print(f"✅ [SUCCESS] Uploaded {field} to S3: {uploaded_docs[field]}")
+                    else:
+                        print(f"❌ [ERROR] Failed to upload {field}")
+                else:
+                    print(f"⚠️ [WARNING] {field} file has no filename")
+            else:
+                print(f"ℹ️ [INFO] {field} not found in request files")
+
+        # Handle profile picture separately (different folder)
+        if 'profile_picture' in request.files:
+            profile_pic = request.files['profile_picture']
+            print(f"🔍 [DEBUG] Found profile_picture file: filename='{profile_pic.filename}', content_type='{profile_pic.content_type}', size={profile_pic.content_length if hasattr(profile_pic, 'content_length') else 'unknown'}")
+            
+            if profile_pic.filename:
+                print(f"🔍 [DEBUG] Processing profile_picture: {profile_pic.filename}")
+                profile_path = upload_file(profile_pic, "onboarding/profile")
+                if profile_path:
+                    uploaded_docs['profile_picture'] = profile_path
+                    print(f"✅ [SUCCESS] Uploaded profile_picture to S3: {profile_path}")
+                else:
+                    print(f"❌ [ERROR] Failed to upload profile_picture")
+            else:
+                print(f"⚠️ [WARNING] profile_picture file has no filename")
+        else:
+            print(f"ℹ️ [INFO] profile_picture not found in request files")
+
+        print(f"🔍 [DEBUG] Total uploaded docs: {len(uploaded_docs)}")
+        print(f"🔍 [DEBUG] Uploaded files: {uploaded_docs}")
 
         # --- Create or update onboarding record ---
         onboarding = DeliveryOnboarding.query.filter_by(email=email).first()
         if onboarding:
+            print(f"🔍 [DEBUG] Found existing onboarding record: {onboarding.id}")
+            print(f"🔍 [DEBUG] Current image fields before update:")
+            image_fields = ['profile_picture', 'aadhar_card', 'pan_card', 'dl', 'rc_card', 'bank_passbook']
+            for field in image_fields:
+                current_value = getattr(onboarding, field, None)
+                print(f"  - {field}: {current_value}")
+            
             # Update existing record
             for field, path in uploaded_docs.items():
+                print(f"🔍 [DEBUG] Updating {field} with: {path}")
                 setattr(onboarding, field, path)
             onboarding.status = "documents_submitted"
             onboarding.updated_at = datetime.utcnow()
+            
+            print(f"🔍 [DEBUG] Committing to database...")
             db.session.commit()
+            print(f"✅ [SUCCESS] Database updated successfully")
+            
+            # Print final image fields after update
+            print(f"🔍 [DEBUG] Final image fields after update:")
+            for field in image_fields:
+                final_value = getattr(onboarding, field, None)
+                print(f"  - {field}: {final_value}")
 
             return jsonify({
                 "success": True,
@@ -528,6 +657,7 @@ def upload_documents():
             }), 200
 
         else:
+            print(f"[DOCUMENT UPLOAD] No existing onboarding record found for email: {email}")
             # Create new onboarding with documents only
             onboarding = DeliveryOnboarding(
                 email=email,
@@ -536,8 +666,10 @@ def upload_documents():
                 updated_at=datetime.utcnow(),
                 **uploaded_docs
             )
+            print(f"[DOCUMENT UPLOAD] Creating new onboarding record with documents: {uploaded_docs}")
             db.session.add(onboarding)
             db.session.commit()
+            print(f"[DOCUMENT UPLOAD] New onboarding record created: {onboarding.id}")
 
             return jsonify({
                 "success": True,
@@ -549,5 +681,7 @@ def upload_documents():
 
     except Exception as e:
         db.session.rollback()
-        print(f"Upload documents error: {e}")
-        return jsonify({"success": False, "message": "Internal server error"}), 500
+        print(f"[DOCUMENT UPLOAD] Error: {e}")
+        import traceback
+        print(f"[DOCUMENT UPLOAD] Traceback: {traceback.format_exc()}")
+        return jsonify({"success": False, "message": f"Internal server error: {str(e)}"}), 500

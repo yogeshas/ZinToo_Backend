@@ -1,10 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
 
 class ApiService5Tabs {
-  static final String _baseUrl = dotenv.env['BASE_URL'] ?? 'http://127.0.0.1:5000';
+  static final String _baseUrl = 'http://172.31.31.194:5000'; // Server IP address
 
   // ============================================================================
   // 5-TAB DELIVERY ORDER MANAGEMENT APIs
@@ -815,5 +817,126 @@ class ApiService5Tabs {
       print("❌ Error uploading delivery photo: $e");
       return {"success": false, "error": "Network error: $e"};
     }
+  }
+
+  // ============================================================================
+  // PRODUCT IMAGE AND BARCODE VERIFICATION APIs
+  // ============================================================================
+
+  /// Download image from URL
+  Future<Uint8List?> downloadImage(String imageUrl) async {
+    try {
+      final uri = Uri.parse(imageUrl);
+      final response = await http.get(uri);
+      
+      if (response.statusCode == 200) {
+        return response.bodyBytes;
+      } else {
+        print("❌ Error downloading image: ${response.statusCode}");
+        return null;
+      }
+    } catch (e) {
+      print("❌ Error downloading image: $e");
+      return null;
+    }
+  }
+
+  /// Verify barcode with backend
+  Future<Map<String, dynamic>> verifyBarcode(XFile image, String expectedBarcode, {String? authToken}) async {
+    try {
+      final uri = Uri.parse("$_baseUrl/api/delivery-orders/verify-barcode");
+      
+      var request = http.MultipartRequest("POST", uri);
+      if (authToken != null) {
+        request.headers["Authorization"] = authToken.startsWith("Bearer ") ? authToken : "Bearer $authToken";
+      }
+      
+      // Add image file
+      request.files.add(await http.MultipartFile.fromPath('image', image.path));
+      request.fields['expected_barcode'] = expectedBarcode;
+      
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+      
+      print("🔍 Barcode Verification Response: ${response.statusCode} - ${response.body}");
+      
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return {
+          "success": true,
+          "verified": data["verified"] ?? false,
+          "message": data["message"] ?? "Barcode verification completed"
+        };
+      } else {
+        try {
+          final errorData = jsonDecode(response.body);
+          return {
+            "success": false,
+            "error": errorData["error"] ?? "Barcode verification failed"
+          };
+        } catch (_) {
+          return {
+            "success": false,
+            "error": "Server error: ${response.statusCode} - ${response.body}"
+          };
+        }
+      }
+    } catch (e) {
+      print("❌ Error verifying barcode: $e");
+      return {"success": false, "error": "Network error: $e"};
+    }
+  }
+
+  /// Update delivery status after verification
+  Future<Map<String, dynamic>> updateDeliveryStatus(int orderId, String status, String notes, {String? authToken}) async {
+    try {
+      final uri = Uri.parse("$_baseUrl/api/delivery-orders/$orderId/status");
+      
+      final response = await http.put(
+        uri,
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": authToken != null ? (authToken.startsWith("Bearer ") ? authToken : "Bearer $authToken") : "Bearer "
+        },
+        body: jsonEncode({
+          "status": status,
+          "notes": notes,
+          "verified": true
+        })
+      );
+      
+      print("📝 Update Status Response: ${response.statusCode} - ${response.body}");
+      
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return {
+          "success": true,
+          "message": data["message"] ?? "Status updated successfully"
+        };
+      } else {
+        try {
+          final errorData = jsonDecode(response.body);
+          return {
+            "success": false,
+            "error": errorData["error"] ?? "Failed to update status"
+          };
+        } catch (_) {
+          return {
+            "success": false,
+            "error": "Server error: ${response.statusCode} - ${response.body}"
+          };
+        }
+      }
+    } catch (e) {
+      print("❌ Error updating delivery status: $e");
+      return {"success": false, "error": "Network error: $e"};
+    }
+  }
+
+  /// Get auth token from storage or environment
+  String _getAuthToken() {
+    // This should be implemented to get the actual auth token
+    // For now, return empty string to force auth token to be passed explicitly
+    return "";
   }
 }

@@ -7,6 +7,182 @@ class ApiServiceEnhanced {
   final String _baseUrl = dotenv.env['BASE_URL'] ?? 'http://127.0.0.1:5000';
 
   // ============================================================================
+  // NOTIFICATION APIs
+  // ============================================================================
+
+  /// Register device token for push notifications
+  Future<Map<String, dynamic>> registerDeviceToken(String authToken, String deviceToken, String platform) async {
+    final uri = Uri.parse("$_baseUrl/api/delivery-mobile/notifications/register-device");
+    
+    try {
+      final payload = {
+        "device_token": deviceToken,
+        "platform": platform,
+      };
+      
+      final encryptedPayload = _encryptPayload(payload);
+      
+      var request = http.Request("POST", uri);
+      request.headers["Authorization"] = authToken.startsWith("Bearer ") ? authToken : "Bearer $authToken";
+      request.headers["Content-Type"] = "application/json";
+      request.body = jsonEncode({"payload": encryptedPayload});
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      print("📱 Register Device Token Response: ${response.statusCode} - ${response.body}");
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data["success"] == true) {
+          final decryptedData = _decryptPayload(data["encrypted_data"]);
+          return {
+            "success": true,
+            "message": decryptedData["message"] ?? "Device token registered successfully",
+            "platform": decryptedData["platform"],
+            "notifications_enabled": decryptedData["notifications_enabled"] ?? true
+          };
+        } else {
+          return {
+            "success": false,
+            "error": data["error"] ?? "Failed to register device token"
+          };
+        }
+      } else {
+        try {
+          final errorData = jsonDecode(response.body);
+          return {
+            "success": false,
+            "error": errorData["error"] ?? "Failed to register device token"
+          };
+        } catch (_) {
+          return {
+            "success": false,
+            "error": "Server error: ${response.statusCode} - ${response.body}"
+          };
+        }
+      }
+    } catch (e) {
+      print("❌ Error registering device token: $e");
+      return {
+        "success": false,
+        "error": "Network error: $e"
+      };
+    }
+  }
+
+  /// Toggle notifications on/off
+  Future<Map<String, dynamic>> toggleNotifications(String authToken, bool enable) async {
+    final uri = Uri.parse("$_baseUrl/api/delivery-mobile/notifications/toggle");
+    
+    try {
+      final payload = {
+        "enable": enable,
+      };
+      
+      final encryptedPayload = _encryptPayload(payload);
+      
+      var request = http.Request("POST", uri);
+      request.headers["Authorization"] = authToken.startsWith("Bearer ") ? authToken : "Bearer $authToken";
+      request.headers["Content-Type"] = "application/json";
+      request.body = jsonEncode({"payload": encryptedPayload});
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      print("📱 Toggle Notifications Response: ${response.statusCode} - ${response.body}");
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data["success"] == true) {
+          final decryptedData = _decryptPayload(data["encrypted_data"]);
+          return {
+            "success": true,
+            "message": decryptedData["message"] ?? "Notifications toggled successfully",
+            "notifications_enabled": decryptedData["notifications_enabled"] ?? enable
+          };
+        } else {
+          return {
+            "success": false,
+            "error": data["error"] ?? "Failed to toggle notifications"
+          };
+        }
+      } else {
+        try {
+          final errorData = jsonDecode(response.body);
+          return {
+            "success": false,
+            "error": errorData["error"] ?? "Failed to toggle notifications"
+          };
+        } catch (_) {
+          return {
+            "success": false,
+            "error": "Server error: ${response.statusCode} - ${response.body}"
+          };
+        }
+      }
+    } catch (e) {
+      print("❌ Error toggling notifications: $e");
+      return {
+        "success": false,
+        "error": "Network error: $e"
+      };
+    }
+  }
+
+  /// Send test notification
+  Future<Map<String, dynamic>> sendTestNotification(String authToken) async {
+    final uri = Uri.parse("$_baseUrl/api/delivery-mobile/notifications/test");
+    
+    try {
+      var request = http.Request("POST", uri);
+      request.headers["Authorization"] = authToken.startsWith("Bearer ") ? authToken : "Bearer $authToken";
+      request.headers["Content-Type"] = "application/json";
+      request.body = jsonEncode({});
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      print("📱 Send Test Notification Response: ${response.statusCode} - ${response.body}");
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data["success"] == true) {
+          final decryptedData = _decryptPayload(data["encrypted_data"]);
+          return {
+            "success": true,
+            "message": decryptedData["message"] ?? "Test notification sent successfully"
+          };
+        } else {
+          return {
+            "success": false,
+            "error": data["error"] ?? "Failed to send test notification"
+          };
+        }
+      } else {
+        try {
+          final errorData = jsonDecode(response.body);
+          return {
+            "success": false,
+            "error": errorData["error"] ?? "Failed to send test notification"
+          };
+        } catch (_) {
+          return {
+            "success": false,
+            "error": "Server error: ${response.statusCode} - ${response.body}"
+          };
+        }
+      }
+    } catch (e) {
+      print("❌ Error sending test notification: $e");
+      return {
+        "success": false,
+        "error": "Network error: $e"
+      };
+    }
+  }
+
+  // ============================================================================
   // ENHANCED DELIVERY ORDER MANAGEMENT APIs
   // ============================================================================
 

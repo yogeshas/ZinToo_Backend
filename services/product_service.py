@@ -97,6 +97,7 @@ def create_product(data):
             barcode=barcode,
             image=image_field,
             tag=data.get("tag"),
+            actual_price=float(data.get("actual_price", 0)),
         )
         db.session.add(product)
         db.session.commit()
@@ -140,6 +141,7 @@ def update_product(pid, data):
         "coupon_id",
         "discount_value",
         "barcode",
+        "actual_price",
     }
     
     # Handle colors - new structure

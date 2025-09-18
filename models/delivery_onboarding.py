@@ -21,9 +21,9 @@ class DeliveryOnboarding(db.Model):
     referral_code = db.Column(db.String(50), nullable=True)
     
     # Identity Documents
-    aadhar_card = db.Column(db.String(12), nullable=True, unique=True)  # Make nullable for initial creation
-    pan_card = db.Column(db.String(10), nullable=True, unique=True)  # Make nullable for initial creation
-    dl = db.Column(db.String(20), nullable=True, unique=True)  # Driving License - Make nullable for initial creation
+    aadhar_card = db.Column(db.String(500), nullable=True)  # Aadhar card number or S3 URL
+    pan_card = db.Column(db.String(500), nullable=True)  # PAN card number or S3 URL
+    dl = db.Column(db.String(500), nullable=True)  # Driving License number or S3 URL
     
     # Vehicle Information
     vehicle_number = db.Column(db.String(20), nullable=True, unique=True)  # Make nullable for initial creation

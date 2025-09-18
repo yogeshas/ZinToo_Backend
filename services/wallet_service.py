@@ -1,6 +1,7 @@
 # services/wallet_service.py
 from models.wallet import Wallet, WalletTransaction
 from models.customer import Customer
+from models.transaction import Transaction
 from extensions import db
 from utils.crypto import encrypt_payload, decrypt_payload
 from datetime import datetime
@@ -15,6 +16,7 @@ def get_wallet_balance(customer_id: int):
             # Create wallet if it doesn't exist
             wallet = Wallet(customer_id=customer_id, balance=0.0)
             db.session.add(wallet)
+            db.session.flush()  # Flush to get the wallet.id
             db.session.commit()
         
         # Encrypt the response data
@@ -43,12 +45,13 @@ def add_money_to_wallet(customer_id: int, amount: float, description: str = "Wal
             # Create wallet if it doesn't exist
             wallet = Wallet(customer_id=customer_id, balance=amount)
             db.session.add(wallet)
+            db.session.flush()  # Flush to get the wallet.id
         else:
             wallet.balance += amount
             wallet.updated_at = datetime.utcnow()
         
-        # Create transaction record
-        transaction = WalletTransaction(
+        # Create wallet transaction record
+        wallet_transaction = WalletTransaction(
             wallet_id=wallet.id,
             transaction_type="credit",
             amount=amount,
@@ -56,14 +59,30 @@ def add_money_to_wallet(customer_id: int, amount: float, description: str = "Wal
             reference_id=reference_id
         )
         
-        db.session.add(transaction)
+        # Create main transaction record
+        main_transaction = Transaction.create_transaction(
+            customer_id=customer_id,
+            transaction_type="wallet_credit",
+            amount=amount,
+            description=description,
+            reference_id=reference_id,
+            reference_type="wallet",
+            payment_method="wallet",
+            metadata={
+                "wallet_id": wallet.id,
+                "previous_balance": wallet.balance - amount,
+                "new_balance": wallet.balance
+            }
+        )
+        
+        db.session.add(wallet_transaction)
         db.session.commit()
         
         # Encrypt the response data
         encrypted_data = encrypt_payload({
             "success": True,
             "new_balance": wallet.balance,
-            "transaction_id": transaction.id,
+            "transaction_id": main_transaction.id,
             "message": f"₹{amount} added to wallet successfully"
         })
         
@@ -92,8 +111,8 @@ def deduct_money_from_wallet(customer_id: int, amount: float, description: str =
         wallet.balance -= amount
         wallet.updated_at = datetime.utcnow()
         
-        # Create transaction record
-        transaction = WalletTransaction(
+        # Create wallet transaction record
+        wallet_transaction = WalletTransaction(
             wallet_id=wallet.id,
             transaction_type="debit",
             amount=amount,
@@ -101,14 +120,30 @@ def deduct_money_from_wallet(customer_id: int, amount: float, description: str =
             reference_id=reference_id
         )
         
-        db.session.add(transaction)
+        # Create main transaction record
+        main_transaction = Transaction.create_transaction(
+            customer_id=customer_id,
+            transaction_type="wallet_debit",
+            amount=-amount,  # Negative amount for debit
+            description=description,
+            reference_id=reference_id,
+            reference_type="wallet",
+            payment_method="wallet",
+            metadata={
+                "wallet_id": wallet.id,
+                "previous_balance": wallet.balance + amount,
+                "new_balance": wallet.balance
+            }
+        )
+        
+        db.session.add(wallet_transaction)
         db.session.commit()
         
         # Encrypt the response data
         encrypted_data = encrypt_payload({
             "success": True,
             "new_balance": wallet.balance,
-            "transaction_id": transaction.id,
+            "transaction_id": main_transaction.id,
             "message": f"₹{amount} deducted from wallet successfully"
         })
         
@@ -136,7 +171,7 @@ def get_wallet_transactions(customer_id: int, limit: int = 10):
             .limit(limit)\
             .all()
         
-        transactions_data = [transaction.as_dict() for transaction in transactions]
+        transactions_data = [wallet_tx.as_dict() for wallet_tx in transactions]
         
         # Encrypt the response data
         encrypted_data = encrypt_payload({
@@ -161,13 +196,16 @@ def refund_to_wallet(customer_id: int, amount: float, description: str = "Refund
         wallet = Wallet.query.filter_by(customer_id=customer_id).first()
         
         if not wallet:
-            return {"error": "Wallet not found"}, 404
+            # Create wallet if it doesn't exist
+            wallet = Wallet(customer_id=customer_id, balance=amount)
+            db.session.add(wallet)
+            db.session.flush()  # Flush to get the wallet.id
         
         wallet.balance += amount
         wallet.updated_at = datetime.utcnow()
         
-        # Create transaction record
-        transaction = WalletTransaction(
+        # Create wallet transaction record
+        wallet_transaction = WalletTransaction(
             wallet_id=wallet.id,
             transaction_type="refund",
             amount=amount,
@@ -175,14 +213,30 @@ def refund_to_wallet(customer_id: int, amount: float, description: str = "Refund
             reference_id=reference_id
         )
         
-        db.session.add(transaction)
+        # Create main transaction record
+        main_transaction = Transaction.create_transaction(
+            customer_id=customer_id,
+            transaction_type="refund",
+            amount=amount,
+            description=description,
+            reference_id=reference_id,
+            reference_type="refund",
+            payment_method="wallet",
+            metadata={
+                "wallet_id": wallet.id,
+                "previous_balance": wallet.balance - amount,
+                "new_balance": wallet.balance
+            }
+        )
+        
+        db.session.add(wallet_transaction)
         db.session.commit()
         
         # Encrypt the response data
         encrypted_data = encrypt_payload({
             "success": True,
             "new_balance": wallet.balance,
-            "transaction_id": transaction.id,
+            "transaction_id": main_transaction.id,
             "message": f"₹{amount} refunded to wallet successfully"
         })
         

@@ -126,20 +126,49 @@ def get_onboarding_by_email(email):
 def update_onboarding(onboarding_id, data):
     """Update onboarding record"""
     try:
+        print(f"\n🔍 [DEBUG UPDATE SERVICE] Updating onboarding ID: {onboarding_id}")
+        print(f"🔍 [DEBUG] Data received: {data}")
+        
         onboarding = DeliveryOnboarding.query.get(onboarding_id)
         if not onboarding:
+            print(f"❌ [ERROR] Onboarding not found for ID: {onboarding_id}")
             return {"success": False, "message": "Onboarding not found"}
         
+        print(f"🔍 [DEBUG] Found onboarding record: {onboarding.email}")
+        print(f"🔍 [DEBUG] Current image fields before update:")
+        image_fields = ['profile_picture', 'aadhar_card', 'pan_card', 'dl', 'rc_card', 'bank_passbook']
+        for field in image_fields:
+            current_value = getattr(onboarding, field, None)
+            print(f"  - {field}: {current_value}")
+        
         # Update fields
+        updated_fields = []
         for field, value in data.items():
             if hasattr(onboarding, field) and field not in ['id', 'created_at', 'updated_at']:
+                old_value = getattr(onboarding, field, None)
                 if field == 'dob' and value:
-                    setattr(onboarding, field, datetime.strptime(value, '%Y-%m-%d').date())
+                    new_value = datetime.strptime(value, '%Y-%m-%d').date()
+                    setattr(onboarding, field, new_value)
+                    updated_fields.append(f"{field}: {old_value} -> {new_value}")
                 else:
                     setattr(onboarding, field, value)
+                    updated_fields.append(f"{field}: {old_value} -> {value}")
+                    print(f"🔍 [DEBUG] Set {field} = {value}")
+            else:
+                print(f"⚠️ [WARNING] Field {field} not found in onboarding model or is protected")
+        
+        print(f"🔍 [DEBUG] Updated fields: {updated_fields}")
         
         onboarding.updated_at = datetime.utcnow()
+        print(f"🔍 [DEBUG] Committing to database...")
         db.session.commit()
+        print(f"✅ [SUCCESS] Database updated successfully")
+        
+        # Print final image fields after update
+        print(f"🔍 [DEBUG] Final image fields after update:")
+        for field in image_fields:
+            final_value = getattr(onboarding, field, None)
+            print(f"  - {field}: {final_value}")
         
         return {
             "success": True, 
@@ -149,7 +178,9 @@ def update_onboarding(onboarding_id, data):
         
     except Exception as e:
         db.session.rollback()
-        print(f"Error updating onboarding: {e}")
+        print(f"❌ [ERROR] Error updating onboarding: {e}")
+        import traceback
+        print(f"❌ [ERROR] Traceback: {traceback.format_exc()}")
         return {"success": False, "message": "Failed to update onboarding"}
 
 def delete_onboarding(onboarding_id):
@@ -369,24 +400,44 @@ def delivered_order_by_delivery_guy(delivery_guy_id, order_id, delivered_reason)
 
 
 def upload_file(file, folder="onboarding"):
-    """Upload file and return path"""
+    """Upload file to S3 and return URL"""
     try:
         if not file:
             return None
         
-        # Create upload directory if it doesn't exist
-        upload_dir = os.path.join('assets', folder)
-        os.makedirs(upload_dir, exist_ok=True)
+        # Import S3 service
+        from utils.s3_service import S3Service
+        s3_service = S3Service()
         
-        # Generate unique filename
-        filename = f"{uuid.uuid4()}_{file.filename}"
-        file_path = os.path.join(upload_dir, filename)
+        # Determine file type based on folder
+        if folder == "onboarding/profile":
+            file_type = "image"
+            folder_type = "delivery_onboarding"  # Use delivery_onboarding folder
+        elif folder == "onboarding/documents":
+            file_type = "document"
+            folder_type = "delivery_onboarding"  # Use delivery_onboarding folder
+        else:
+            file_type = "document"
+            folder_type = "delivery_onboarding"  # Use delivery_onboarding folder
         
-        # Save file
-        file.save(file_path)
+        # Generate unique file ID for S3 upload
+        file_id = str(uuid.uuid4())
         
-        return file_path
+        # Upload to S3
+        s3_url = s3_service.upload_file(
+            file=file,
+            file_id=file_id,
+            file_type=file_type,
+            folder_type=folder_type
+        )
+        
+        if s3_url:
+            print(f"✅ File uploaded to S3 delivery_onboarding folder: {s3_url}")
+            return s3_url
+        else:
+            print("❌ Failed to upload file to S3")
+            return None
         
     except Exception as e:
-        print(f"Error uploading file: {e}")
+        print(f"Error uploading file to S3: {e}")
         return None

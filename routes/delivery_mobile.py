@@ -9,8 +9,10 @@ from services.delivery_auth_service import (
 )
 from services.delivery_onboarding_service import get_onboarding_by_id, update_onboarding
 from utils.crypto import encrypt_payload, decrypt_payload
+from utils.sns_service import sns_service
 from models.order import Order
 from models.delivery_onboarding import DeliveryOnboarding
+from models.delivery_auth import DeliveryGuyAuth
 from extensions import db
 from functools import wraps
 from datetime import datetime
@@ -353,3 +355,154 @@ def get_orders_by_delivery_guy(onboarding_id):
     except Exception as e:
         print(f"Error getting orders by delivery guy: {e}")
         return []
+
+# ============================================================================
+# NOTIFICATION ROUTES (Auth required)
+# ============================================================================
+
+@delivery_mobile_bp.route("/notifications/register-device", methods=["POST"])
+@require_delivery_auth
+def register_device_token():
+    """Register device token for push notifications"""
+    try:
+        encrypted_data = request.json.get("payload")
+        if not encrypted_data:
+            return jsonify({"error": "Missing encrypted payload"}), 400
+
+        data = decrypt_payload(encrypted_data)
+        device_token = data.get("device_token")
+        platform = data.get("platform", "android")  # android or ios
+        
+        if not device_token:
+            return jsonify({"error": "Device token is required"}), 400
+        
+        if platform not in ["android", "ios"]:
+            return jsonify({"error": "Platform must be 'android' or 'ios'"}), 400
+        
+        # Get delivery guy auth record
+        delivery_guy_id = request.delivery_guy["id"]
+        auth_record = DeliveryGuyAuth.query.filter_by(delivery_guy_id=delivery_guy_id).first()
+        
+        if not auth_record:
+            return jsonify({"error": "Delivery guy auth record not found"}), 404
+        
+        # Update device token
+        auth_record.update_device_token(device_token, platform)
+        
+        # Create SNS endpoint if using SNS
+        if sns_service.android_app_arn or sns_service.ios_app_arn:
+            endpoint_result = sns_service.create_platform_endpoint(device_token, platform)
+            if endpoint_result["success"]:
+                auth_record.sns_endpoint_arn = endpoint_result["endpoint_arn"]
+        
+        db.session.commit()
+        
+        response_data = {
+            "success": True,
+            "message": "Device token registered successfully",
+            "platform": platform,
+            "notifications_enabled": auth_record.is_notifications_enabled
+        }
+        
+        enc = encrypt_payload(response_data)
+        return jsonify({"success": True, "encrypted_data": enc}), 200
+        
+    except Exception as e:
+        print(f"Register device token error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+@delivery_mobile_bp.route("/notifications/toggle", methods=["POST"])
+@require_delivery_auth
+def toggle_notifications():
+    """Enable/disable push notifications"""
+    try:
+        encrypted_data = request.json.get("payload")
+        if not encrypted_data:
+            return jsonify({"error": "Missing encrypted payload"}), 400
+
+        data = decrypt_payload(encrypted_data)
+        enable = data.get("enable", True)
+        
+        # Get delivery guy auth record
+        delivery_guy_id = request.delivery_guy["id"]
+        auth_record = DeliveryGuyAuth.query.filter_by(delivery_guy_id=delivery_guy_id).first()
+        
+        if not auth_record:
+            return jsonify({"error": "Delivery guy auth record not found"}), 404
+        
+        # Toggle notifications
+        if enable:
+            auth_record.enable_notifications()
+            message = "Notifications enabled"
+        else:
+            auth_record.disable_notifications()
+            message = "Notifications disabled"
+        
+        db.session.commit()
+        
+        response_data = {
+            "success": True,
+            "message": message,
+            "notifications_enabled": auth_record.is_notifications_enabled
+        }
+        
+        enc = encrypt_payload(response_data)
+        return jsonify({"success": True, "encrypted_data": enc}), 200
+        
+    except Exception as e:
+        print(f"Toggle notifications error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+@delivery_mobile_bp.route("/notifications/test", methods=["POST"])
+@require_delivery_auth
+def send_test_notification():
+    """Send test notification to delivery guy"""
+    try:
+        # Get delivery guy auth record
+        delivery_guy_id = request.delivery_guy["id"]
+        auth_record = DeliveryGuyAuth.query.filter_by(delivery_guy_id=delivery_guy_id).first()
+        
+        if not auth_record:
+            return jsonify({"error": "Delivery guy auth record not found"}), 404
+        
+        if not auth_record.has_valid_device_token():
+            return jsonify({"error": "No valid device token found"}), 400
+        
+        # Send test notification
+        title = "🧪 Test Notification"
+        body = "This is a test notification from ZinToo Delivery App"
+        
+        if auth_record.sns_endpoint_arn:
+            # Use SNS
+            result = sns_service.send_push_notification(
+                auth_record.sns_endpoint_arn, 
+                title, 
+                body,
+                {"type": "test", "timestamp": datetime.utcnow().isoformat()}
+            )
+        else:
+            # Use direct FCM
+            result = sns_service.send_direct_fcm_notification(
+                auth_record.device_token,
+                title,
+                body,
+                {"type": "test", "timestamp": datetime.utcnow().isoformat()}
+            )
+        
+        if result["success"]:
+            response_data = {
+                "success": True,
+                "message": "Test notification sent successfully"
+            }
+        else:
+            response_data = {
+                "success": False,
+                "message": f"Failed to send notification: {result['message']}"
+            }
+        
+        enc = encrypt_payload(response_data)
+        return jsonify({"success": True, "encrypted_data": enc}), 200
+        
+    except Exception as e:
+        print(f"Send test notification error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
